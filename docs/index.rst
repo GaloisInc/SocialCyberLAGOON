@@ -7,13 +7,13 @@ Welcome to LAGOON's documentation!
 ==================================
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Contents:
+    :maxdepth: 2
+    :caption: Contents:
 
 .. automodule:: lagoon
 
-  Members
-  =======
+    Members
+    =======
 
 Indices and tables
 ==================

@@ -9,5 +9,15 @@ Submodules
     cli
     db
     ingest
+
+Architecture
+============
+
+.. mermaid::
+
+    graph LR;
+    ingest --> db
+    db --> ml
+    ml --> db
 """
 

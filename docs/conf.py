@@ -25,13 +25,13 @@ author = 'Galois, Inc.'
 # -- General configuration ---------------------------------------------------
 
 autoclass_content = 'both'
-autodoc_default_flags = [
+autodoc_default_options = {
         # Make sure that any autodoc declarations show the right members
-        "members",
-        "inherited-members",
-        "private-members",
-        "show-inheritance",
-]
+        'members': True,
+        'inherited-members': True,
+        'private-members': True,
+        'show-inheritance': True,
+}
 autosummary_generate = True  # Make _autosummary files and include them
 napoleon_numpy_docstring = False  # Force consistency, leave only Google
 napoleon_use_rtype = False  # More legible
@@ -44,6 +44,7 @@ extensions = [
         'sphinx.ext.autodoc',
         'sphinx.ext.autosummary',
         'sphinx.ext.napoleon',
+        'sphinxcontrib.mermaid',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
