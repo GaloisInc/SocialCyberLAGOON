@@ -41,11 +41,15 @@ napoleon_use_rtype = False  # More legible
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-        'sphinx.ext.autodoc',
-        'sphinx.ext.autosummary',
+        #'sphinx.ext.autodoc',
+        #'sphinx.ext.autosummary',
+        'autoapi.extension',
         'sphinx.ext.napoleon',
         'sphinxcontrib.mermaid',
 ]
+
+autoapi_type = 'python'
+autoapi_dirs = ['../lagoon']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

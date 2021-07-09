@@ -1,2 +1,10 @@
+alembic
+arrow
+GitPython
+psycopg2-binary
+sqlalchemy
+sqlalchemy-json
+sqlalchemy-utils
+tqdm
 typer
 

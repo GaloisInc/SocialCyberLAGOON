@@ -1,4 +1,6 @@
+docker
 sphinx
+sphinx-autoapi
 sphinx-rtd-theme
 sphinxcontrib-mermaid
 

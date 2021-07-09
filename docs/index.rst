@@ -10,10 +10,8 @@ Welcome to LAGOON's documentation!
     :maxdepth: 2
     :caption: Contents:
 
-.. automodule:: lagoon
+    autoapi/index
 
-    Members
-    =======
 
 Indices and tables
 ==================
