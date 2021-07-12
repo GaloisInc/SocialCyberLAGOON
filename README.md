@@ -7,7 +7,7 @@ To build the docs:
 $ pip install -r requirements-dev.txt
 $ cd docs
 $ make html
-$ open _build/index.html
+$ open _build/html/index.html
 ```
 
 # Getting started with development
