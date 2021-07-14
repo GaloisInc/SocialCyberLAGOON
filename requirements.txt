@@ -1,5 +1,6 @@
 alembic
 arrow
+asyncpg
 GitPython
 psycopg2-binary
 sqlalchemy
@@ -7,4 +8,5 @@ sqlalchemy-json
 sqlalchemy-utils
 tqdm
 typer
+vuespa>=0.5.0
 

@@ -1,12 +1,15 @@
 
 from lagoon.config import get_config
 
+import asyncio
+import contextlib
 import sqlalchemy.orm
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy_utils import database_exists, create_database
 import threading
 
-_engine = None
 _lock = threading.Lock()
+_engine = None
 _sessionmaker = None
 def get_engine():
     """Returns the sqlalchemy.Engine instance.
@@ -40,4 +43,39 @@ def get_session():
         # Ensure engine exists
         get_engine()
     return _sessionmaker.begin()
+
+
+_engineaio = None
+_lockaio = asyncio.Lock()
+_sessionmakeraio = None
+async def get_engine_async():
+    """Returns an asynchronous engine.
+    """
+    global _engineaio, _sessionmakeraio
+    async with _lockaio:
+        if _engineaio is None:
+            cfg = get_config()
+            u = cfg['db']['user']
+            p = cfg['db']['password']
+            h = cfg['db']['host']
+            po = cfg['db']['port']
+            db = cfg['db']['db']
+            _engineaio = create_async_engine(
+                    f'postgresql+asyncpg://{u}:{p}@{h}:{po}/{db}',
+                    future=True)
+            _sessionmakeraio = sqlalchemy.orm.sessionmaker(_engineaio,
+                    class_=AsyncSession)
+    return _engineaio
+
+
+@contextlib.asynccontextmanager
+async def get_session_async():
+    """Returns a sqlalchemy.ext.asyncio.AsyncSession manager for use in a
+    context manager.
+    """
+    if _engineaio is None:
+        await get_engine_async()
+    async with _sessionmakeraio() as session:
+        async with session.begin():
+            yield session
 

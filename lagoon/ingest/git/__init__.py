@@ -15,6 +15,10 @@ def load_git_repo(path: Path):
     """
     repo = git.Repo(path)
 
+    # Call this early -- want it to fail before spending a bunch of time
+    # importing commits.
+    repo_name = _repo_get_name(repo)
+
     entities = collections.defaultdict(lambda: {})
     # Utility functions...
     def db_get_commit(o):
@@ -86,7 +90,6 @@ def load_git_repo(path: Path):
 
     # Now that we have a web, commit it to DB
     with get_session() as sess:
-        repo_name = _repo_get_name(repo)
         resource = f'ingest-git-{repo_name}'
         sch.Batch.cls_reset_resource(resource, session=sess)
 

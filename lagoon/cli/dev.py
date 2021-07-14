@@ -1,7 +1,6 @@
 
 from lagoon.config import get_config
 
-import docker
 import subprocess
 import typer
 import os
@@ -14,6 +13,7 @@ DB_VERSION = 'postgres:13'
 def up():
     """Spins up a developer instance and all necessary services (like postgres).
     """
+    import docker
 
     cfg = get_config()
     client = docker.from_env()
@@ -47,6 +47,8 @@ def up():
 def down():
     """Shuts down the development services.
     """
+    import docker
+
     cfg = get_config()
     client = docker.from_env()
 

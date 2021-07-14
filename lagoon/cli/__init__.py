@@ -39,3 +39,11 @@ def shell():
 
     import IPython; IPython.embed()
 
+
+@app.command()
+def ui():
+    """Launches the UI.
+    """
+    import lagoon.ui.main
+    lagoon.ui.main.main()
+

@@ -3,11 +3,13 @@
 Note for graph queries: https://stackoverflow.com/a/52489739
 """
 
+import dataclasses
 import datetime
 import enum
 import sqlalchemy as sa
 from sqlalchemy.orm import relationship, registry
 import sqlalchemy_json as sj
+from typing import Any, Dict
 
 mapper_registry = registry()
 Base = mapper_registry.generate_base()
@@ -16,6 +18,7 @@ DbEnum = lambda e: sa.Enum(e, native_enum=False, length=255)
 DbJson = lambda: sj.mutable_json_type(dbtype=sa.dialects.postgresql.JSONB,
         nested=True)
 
+@dataclasses.dataclass
 class Batch(Base):
     '''A batch of imported data. Ingesting could be expensive, and should be
     cached where possible. This table is used to track metadata for purging old
@@ -28,16 +31,17 @@ class Batch(Base):
     '''
     __tablename__ = 'batch'
 
-    id = sa.Column(sa.Integer, primary_key=True)
+    id: int = sa.Column(sa.Integer, primary_key=True)
 
     # Resource combines ingest type AND specific resource being imported.
-    resource = sa.Column(sa.String, nullable=False)
-    ingest_time = sa.Column(sa.DateTime, default=datetime.datetime.utcnow)
+    resource: str = sa.Column(sa.String, nullable=False)
+    ingest_time: datetime.datetime = sa.Column(sa.DateTime,
+            default=datetime.datetime.utcnow)
 
     # Revision is for documenting "how much" data was ingested; useful for
     # not re-polling information which has already been fetched. Probably should
     # be monotonic for some definition.
-    revision = sa.Column(sa.String)
+    revision: str = sa.Column(sa.String)
 
     entities = sa.orm.relationship('Entity', back_populates='batch',
             lazy='dynamic', cascade='all, delete')
@@ -76,6 +80,7 @@ class ObservationTypeEnum(enum.Enum):
     modified = 'modified'
 
 
+@dataclasses.dataclass
 class Entity(Base):
     '''An entity within the extracted information.
 
@@ -88,25 +93,25 @@ class Entity(Base):
         cls = self.__class__
         return f'<{cls.__module__}.{cls.__name__} {self.id}: {self.type} {self.name}>'
 
-    id = sa.Column(sa.Integer, primary_key=True)
+    id: int = sa.Column(sa.Integer, primary_key=True)
 
     # The batch which created this entity
-    batch_id = sa.Column(sa.Integer,
+    batch_id: int = sa.Column(sa.Integer,
             sa.ForeignKey('batch.id', ondelete='CASCADE'),
             nullable=False,
             index=True)
     batch = sa.orm.relationship('Batch', back_populates='entities')
 
     # Display name
-    name = sa.Column(sa.String, nullable=False)
+    name: str = sa.Column(sa.String, nullable=False)
 
     # Unique, discretized type of entity. This exists to force ingest processes
     # to coalesce their definitions of
-    type = sa.Column(DbEnum(EntityTypeEnum), nullable=False)
+    type: EntityTypeEnum = sa.Column(DbEnum(EntityTypeEnum), nullable=False)
 
     # Any attributes -- ways of describing this entity's properties (e.g.,
     # e-mail, twitter handle, an email vs a user, etc)
-    attrs = sa.Column(DbJson(), nullable=False, default=lambda: {})
+    attrs: Dict[str, Any] = sa.Column(DbJson(), nullable=False, default=lambda: {})
 
     # Backlinks to observations -- created via `backref` in sqlalchemy
     # obs_as_dst
@@ -138,21 +143,30 @@ class Entity(Base):
 
 
 
+@dataclasses.dataclass
 class Observation(Base):
     '''An observation that was extracted.'''
     __tablename__ = 'observation'
-    def __repr__(self):
+    def __repr__(self, nodb=False):
         cls = self.__class__
         r = [f'<{cls.__module__}.{cls.__name__} {self.id}: ({self.type}']
         if self.value is not None:
             r.append(f'={self.value}')
-        r.append(f', {self.src}, {self.dst})>')
+        if not nodb:
+            s = self.src_id
+            # Prevent DB hits in repr
+            if 'src' in self.__dict__:
+                s = self.src
+            d = self.dst_id
+            if 'dst' in self.__dict__:
+                d = self.dst
+            r.append(f', {s}, {d})>')
         return ''.join(r)
 
-    id = sa.Column(sa.Integer, primary_key=True)
+    id: int = sa.Column(sa.Integer, primary_key=True)
 
     # For group deletion -- identifier of batch
-    batch_id = sa.Column(sa.Integer,
+    batch_id: int = sa.Column(sa.Integer,
             sa.ForeignKey('batch.id', ondelete='CASCADE'),
             nullable=False,
             index=True)
@@ -162,24 +176,25 @@ class Observation(Base):
     # of the observation, and so any idea of directionality or other qualities
     # of the observation other than its value should be attached to that
     # information.
-    type = sa.Column(DbEnum(ObservationTypeEnum), nullable=False)
-    value = sa.Column(sa.Float)
+    type: ObservationTypeEnum = sa.Column(DbEnum(ObservationTypeEnum), nullable=False)
+    value: float = sa.Column(sa.Float)
 
     # UTC time of observation
-    time = sa.Column(sa.DateTime, nullable=False)
+    time: datetime.datetime = sa.Column(sa.DateTime, nullable=False)
 
     # Miscellaneous attributes
-    attrs = sa.Column(DbJson(), nullable=False, default=lambda: {})
+    attrs: Dict[str, Any] = sa.Column(DbJson(), nullable=False,
+            default=lambda: {})
 
     # Entities participating in this observation
-    dst_id = sa.Column(sa.Integer,
+    dst_id: int = sa.Column(sa.Integer,
             sa.ForeignKey('entity.id', ondelete='CASCADE'),
             nullable=False)
     dst = sa.orm.relationship('Entity',
             backref=sa.orm.backref('obs_as_dst', lazy='dynamic'),
             primaryjoin='Entity.id==Observation.dst_id',
             foreign_keys=dst_id)
-    src_id = sa.Column(sa.Integer,
+    src_id: int = sa.Column(sa.Integer,
             sa.ForeignKey('entity.id', ondelete='CASCADE'),
             nullable=False)
     src = sa.orm.relationship('Entity',

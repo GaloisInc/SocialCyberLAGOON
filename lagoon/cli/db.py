@@ -1,8 +1,6 @@
 
 from lagoon.config import get_config
-import lagoon.db.connection
 
-import docker
 import os
 import shutil
 import subprocess
@@ -21,6 +19,7 @@ def pgadmin():
     """
     cfg = get_config()
 
+    import docker
     client = docker.from_env()
 
     host = cfg['db']['host']
@@ -111,6 +110,8 @@ def reset(reset_alembic: bool=typer.Option(False),
         new_revision: Requires reset_alembic. If True, also create a new alembic
                 revision automatically.
     """
+    # Delayed import to keep CLI fast
+    import lagoon.db.connection
     engine = lagoon.db.connection.get_engine()
     path = os.path.dirname(os.path.abspath(__file__))
     from sqlalchemy_utils import database_exists, drop_database, create_database
