@@ -113,7 +113,9 @@ def _repo_get_name(repo):
         assert ':' in url, url
         url = '/'.join(url.split(':', 1))
         return url
+    elif url.startswith('https://'):
+        return url[len('https://'):]
     else:
         raise NotImplementedError(f'Should return pseudo-url like '
-                '`hostname/path/to/repo`')
+                f'`hostname/path/to/repo` from: {url}')
 
