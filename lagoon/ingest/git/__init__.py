@@ -97,7 +97,9 @@ def load_git_repo(path: Path):
         for egroup, edict in entities.items():
             for ename, e in edict.items():
                 batch.entities.append(e)
-                for o in e.obs_as_src + e.obs_as_dst:
+                for o in e.obs_as_src:
+                    batch.observations.append(o)
+                for o in e.obs_as_dst:
                     batch.observations.append(o)
         sess.add(batch)
 
