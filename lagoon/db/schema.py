@@ -77,6 +77,10 @@ class ObservationTypeEnum(enum.Enum):
     attached_to = 'attached_to'
     committed = 'committed'
     created = 'created'
+    message_cc = 'message_cc'
+    message_from = 'message_from'
+    message_ref = 'message_ref'
+    message_to = 'message_to'
     modified = 'modified'
 
 

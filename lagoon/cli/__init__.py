@@ -29,13 +29,19 @@ def hello():
 @app.command()
 def shell():
     """Opens a shell with DB access.
+
+    `sess()` is a function that returns a usable SQLAlchemy session. This is a
+    function s.t. errors in the transaction won't invalidate future usages of
+    sess, which can be annoying when testing in a REPL.
     """
     from lagoon.db.connection import get_session
     import lagoon.db.schema as sch
     import sqlalchemy as sa
 
-    print(f'Can get db session as `get_session()` / schema module as `sch` / sqlalchemy as `sa`')
-    print(f'...Try something like `s = get_session().__enter__(); s.execute(sa.select(sch.Entity).limit(1)).scalar()`')
+    sess = lambda: get_session().__enter__()
+
+    print(f'Use `sess()` for a session / schema module as `sch` / sqlalchemy as `sa`')
+    print(f'...Try something like `sess().execute(sa.select(sch.Entity).limit(1)).scalar()`')
 
     import IPython; IPython.embed()
 
