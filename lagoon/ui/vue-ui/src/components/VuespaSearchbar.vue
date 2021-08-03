@@ -5,7 +5,7 @@ div.vuespa-searchbar
       .shade(@click="open=false")
       .modal(@click.stopPropagation)
         div(style="display: flex; flex-direction: row; margin-bottom: 1em")
-          span(style="white-space: nowrap") Regex ^
+          span(style="white-space: nowrap") ID|Regex ^
           input(ref="openInput" v-model="searchQuery" placeholder="Entity search"
               style="flex-grow: 1:"
               @focus="$event.target.select()")

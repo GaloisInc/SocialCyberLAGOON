@@ -97,6 +97,23 @@ class Client(vuespa.Client):
                     # ~* is case-insensitive posix regex in postgres
                     sch.Entity.name.op('~*')(s)).limit(limit))
             q = [qq[0] for qq in q.all()]
+
+            # See if there's an integer to search for in there
+            ss = s
+            if ss.startswith('^'):
+                ss = ss[1:]
+            if ss.endswith('.*'):
+                ss = ss[:-2]
+            try:
+                maybe_id = int(ss)
+            except ValueError:
+                pass
+            else:
+                q_id = await sess.execute(sa.select(sch.Entity).filter(
+                        sch.Entity.id == maybe_id))
+                q = [qq[0] for qq in q_id.all()] + q
+
+            # Convert to JS object
             r = [{'value': o.id, 'label': repr(o)} for o in q]
             return r
     async def api_entity_search_reverse(self, i):

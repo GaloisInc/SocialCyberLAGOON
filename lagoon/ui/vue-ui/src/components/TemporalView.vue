@@ -8,8 +8,9 @@ div.temporalview
         <!-- observation -->
         span {{cy.$id(id).data('repr')}} -- {{dbTimeToDisplay(cy.$id(id).data('time'))}}
       template(v-else)
-        <!-- event -->
+        <!-- entity -->
         span {{cy.$id(id).data('repr')}}
+      div(v-for="[k, v] of Object.entries(cy.$id(id).data('attrs') || {})") {{k}}: {{new String(v).length > 100 ? new String(v).substring(0, 100) + '...' : new String(v) + ''}}
 
   div(style="position: absolute; left: 2em; right: 2em; bottom: 0.5em")
     div(style="display: flex; flex-direction: row; align-items: center; justify-items: center;")
@@ -334,6 +335,14 @@ export default defineComponent({
           style: {
             shape: 'rectangle',
             'background-color': '#F58A07',
+          },
+        },
+
+        {
+          selector: 'node[type="message"]',
+          style: {
+            shape: 'diamond',
+            'background-color': '#4040E0',
           },
         },
 
