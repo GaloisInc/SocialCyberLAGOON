@@ -3,6 +3,7 @@
 Note for graph queries: https://stackoverflow.com/a/52489739
 """
 
+import arrow
 import dataclasses
 import datetime
 import enum
@@ -88,6 +89,27 @@ class ObservationTypeEnum(enum.Enum):
 class Entity(Base):
     '''An entity within the extracted information.
 
+    For general data processing, to get a neighborhood around a specific entity,
+    Use :class:`lagoon.db.schema_fused.FusedEntity` instead, and do something
+    like:
+
+    ```python
+    import lagoon.db.connection.get_session as get_session
+    import lagoon.db.schema as sch
+    import arrow
+    import sqlalchemy as sa
+    start = arrow.get('20200401').datetime
+    end = arrow.get('20200801').datetime
+    with get_session() as sess:
+        obj = sess.execute(sa.select(sch.FusedEntity).limit(1)).scalar()
+        # Get all FusedObservation objects, and their corresponding entities,
+        # within 2 edge hops of this object
+        obs = obj.obs_hops(2, time_min=start, time_max=end)
+
+        # Can look at entities attached to each edge as:
+        obs[0].dst, obs[0].src
+    ```
+
     Attributes:
         obs_as_dst: Backref to all `Observation` where this entity is `dst`.
         obs_as_src: Backref to all `Observation` where this entity is `src`.
@@ -121,29 +143,18 @@ class Entity(Base):
     # obs_as_dst
     # obs_as_src
 
-    # Convenience observations -- earliest and latest, may be either src or dst
-    @property
-    def obs_earliest(self):
-        s = self.obs_as_src.order_by(Observation.time).limit(1).scalar()
-        d = self.obs_as_dst.order_by(Observation.time).limit(1).scalar()
-        if s and d:
-            if s.time < d.time:
-                return s
-            return d
-        elif s:
-            return s
-        return d
-    @property
-    def obs_latest(self):
-        s = self.obs_as_src.order_by(Observation.time.desc()).limit(1).scalar()
-        d = self.obs_as_dst.order_by(Observation.time.desc()).limit(1).scalar()
-        if s and d:
-            if s.time > d.time:
-                return s
-            return d
-        elif s:
-            return s
-        return d
+    def fused(self):
+        """Returns a :class:`FusedEntity` which corresponds to this entity,
+        but fused.
+        """
+        fe = sa.orm.aliased(FusedEntity)
+
+        return sa.orm.object_session(self).execute(
+                sa.select(fe)
+                .select_from(EntityFusion)
+                .where(EntityFusion.id_other == self.id)
+                .join(fe, fe.id == EntityFusion.id_lowest)
+                ).scalar()
 
 
 
@@ -156,6 +167,8 @@ class Observation(Base):
         r = [f'<{cls.__module__}.{cls.__name__} {self.id}: ({self.type}']
         if self.value is not None:
             r.append(f'={self.value}')
+        time_str = arrow.get(self.time).format('YYYY-MM-DD')
+        r.append(f'@{time_str}')
         if not nodb:
             s = self.src_id
             # Prevent DB hits in repr
@@ -210,4 +223,59 @@ class Observation(Base):
             sa.Index('idx_observation_dst_by_timestamp', 'dst_id', 'time'),
             sa.Index('idx_observation_src_by_timestamp', 'src_id', 'time'),
     )
+
+
+@dataclasses.dataclass
+class EntityFusion(Base):
+    '''A record of entities being fused.
+
+    Note that this table is PK'd by id_other -- that's because we want each
+    entity to belong to 0 or 1 groups.
+    '''
+    __tablename__ = 'entity_fusion'
+
+    id_lowest: int = sa.Column(sa.Integer,
+            sa.ForeignKey('entity.id'),
+            index=True)
+    lowest = sa.orm.relationship('Entity',
+            foreign_keys=[id_lowest])
+
+    id_other: int = sa.Column(sa.Integer,
+            sa.ForeignKey('entity.id'),
+            autoincrement=False,
+            primary_key=True)
+    other = sa.orm.relationship('Entity',
+            foreign_keys=[id_other])
+
+    comment: str = sa.Column(sa.String)
+
+
+
+"""
+@dataclasses.dataclass
+class EntityFusionManual(Base):
+    '''A record of known entity relationships which guide / force those
+    relationships during the fusion process.
+
+    NOT CURRENTLY IMPLEMENTED. So commented out.
+    '''
+    __tablename__ = 'entity_fusion_manual'
+    id: int = sa.Column(sa.Integer, primary_key=True)
+
+    id_a: int = sa.Column(sa.Integer,
+            sa.ForeignKey('entity.id'),
+            nullable=False,
+            index=True)
+    id_b: int = sa.Column(sa.Integer,
+            sa.ForeignKey('entity.id'),
+            nullable=False,
+            index=True)
+    same: bool = sa.Column(sa.Boolean)
+    comment: str = sa.Column(sa.String)
+    comment_time: datetime.datetime = sa.Column(sa.DateTime,
+            default=datetime.datetime.utcnow)
+"""
+
+
+from .schema_fused import FusedEntity, FusedObservation
 

@@ -98,6 +98,67 @@ def pgadmin():
 
 
 @app.command()
+def copy_to(name: str):
+    """Copies the entire database to a new database with the specified name.
+    Useful for testing migrations. See also: :meth:`copy_from`
+    """
+    import lagoon.config
+    db_src = lagoon.config.get_config()['db']['db']
+    db_dst = name
+
+    _copy_db(db_src, db_dst)
+
+
+@app.command()
+def copy_from(name: str):
+    """Overwrites the current database based on the database with the specified
+    name. Useful for testing. See also: :meth:`copy_to`
+    """
+    import lagoon.config
+    db_src = name
+    db_dst = lagoon.config.get_config()['db']['db']
+    _copy_db(db_src, db_dst)
+
+
+def _copy_db(db_src, db_dst, no_prompt=False):
+    """Destroy `db_dst`, replacing it with a copy of `db_src`.
+    """
+    import lagoon.db.connection
+    import sqlalchemy as sa
+
+    engine = lagoon.db.connection.get_engine(admin=True,
+            kwargs={'isolation_level': 'AUTOCOMMIT'})
+
+    with engine.connect() as connection:
+        def terminate_backends(db):
+            text = sa.text(f'''
+                SELECT pg_terminate_backend(pg_stat_activity.pid)
+                FROM pg_stat_activity
+                WHERE pg_stat_activity.datname = :database
+                AND pid <> pg_backend_pid();
+                ''')
+            connection.execute(text, {'database': db})
+
+        cur = connection.execute(
+                sa.text('''SELECT datname FROM pg_database WHERE datname = :database'''),
+                {'database': db_dst})
+        results = cur.all()
+        if results:
+            if not no_prompt:
+                sure = input(f'Database {db_dst} exists; proceeding will delete it! (y/N) ')
+                if sure.lower() != 'y':
+                    print('Aborting.')
+                    return
+
+            terminate_backends(db_dst)
+            connection.execute(sa.text(f'''DROP DATABASE {db_dst}'''))
+
+        terminate_backends(db_src)
+        connection.execute(
+                sa.text(f'''CREATE DATABASE {db_dst} WITH TEMPLATE {db_src}'''))
+
+
+@app.command()
 def reset(reset_alembic: bool=typer.Option(False),
         new_revision: bool=typer.Option(False)):
     """Deletes entire database and reloads from the beginning, with the latest

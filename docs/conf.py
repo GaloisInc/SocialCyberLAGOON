@@ -45,6 +45,7 @@ extensions = [
         #'sphinx.ext.autosummary',
         'autoapi.extension',
         'sphinx.ext.napoleon',
+        'sphinx_codefence',
         'sphinxcontrib.mermaid',
 ]
 

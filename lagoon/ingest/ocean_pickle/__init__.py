@@ -39,20 +39,25 @@ def load_pickle(path: Path):
             'to_name', 'to_email', 'raw_to_string',
             'cc_name', 'cc_email', 'raw_cc_string',
             'subject',
-            'date',
+            'date', 'raw_date_string',
             'message_id',
             'in_reply_to', 'refs',
             'body_text', 'flagged_abuse',
-            'time_stamp']
+            'filename',
+            # time_stamp is when it was imported... not important for us.
+            #'time_stamp',
+            ]
     # Will raise error if any columns not found
     data = data[required_cols]
 
     entities = collections.defaultdict(lambda: {})
-    def db_get_message(id):
+    def db_get_message(id, origin=None):
         r = entities['message'].get(id)
         if r is None:
             r = entities['message'][id] = sch.Entity(name=f'Message {id}',
                     type=sch.EntityTypeEnum.message, attrs={})
+        if origin is not None:
+            r.attrs['origin_filename'] = origin
         return r
     def db_get_user(name, email):
         id = f'{name} <{email}>'
@@ -79,6 +84,11 @@ def load_pickle(path: Path):
 
     for m_idx, m in tqdm.tqdm(data.iterrows(), desc='importing messages',
             total=len(data)):
+
+        # No date --> useless
+        if m['raw_date_string'] is None:
+            continue
+
         def user_resolve(prefix):
             if m[f'{prefix}_name'] is None:
                 return None
@@ -89,7 +99,7 @@ def load_pickle(path: Path):
         to = user_resolve('to')
         cc = user_resolve('cc')
 
-        message = db_get_message(m['message_id'])
+        message = db_get_message(m['message_id'], origin=m['filename'])
         message.attrs['subject'] = m['subject']
         message.attrs['body_text'] = m['body_text']
         message.attrs['flagged_abuse'] = m['flagged_abuse']
@@ -101,7 +111,10 @@ def load_pickle(path: Path):
         badwords_queue_in.put((m['message_id'], m['body_text']))
         badwords_queue_written += 1
 
-        message_time = arrow.get(m['time_stamp']).datetime
+        try:
+            message_time = _date_field_resolve(m['date'], m['raw_date_string'])
+        except:
+            raise ValueError(f"Bad date: {m['message_id']} {m['date']} {m['raw_date_string']}")
         if frm is not None:
             message.obs_as_dst.append(sch.Observation(src=frm,
                 type=sch.ObservationTypeEnum.message_from,
@@ -157,6 +170,25 @@ def load_pickle(path: Path):
 
         sess.flush()
         print(f'Finished with batch {batch.id}')
+
+
+def _date_field_resolve(*dates):
+    """Try to resolve each value in `dates`, in order. Return the first one that
+    resolves correctly.
+    """
+    for fmt_field in dates:
+        for fmt in [None, ['ddd, DD MMM YYYY HH.mm.ss Z']]:
+            args = []
+            if fmt is not None:
+                args.append(fmt)
+            try:
+                message_time = arrow.get(fmt_field, *args).datetime
+            except (TypeError, arrow.parser.ParserError):
+                continue
+            else:
+                return message_time
+    else:
+        raise ValueError(f"Bad dates: {dates}")
 
 
 def _load_word_list(fpath):

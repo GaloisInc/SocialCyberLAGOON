@@ -12,10 +12,8 @@ SQLALchemy tricks (as with `lagoon_cli.py shell`):
 >>> o.obs_as_dst.all()
 >>> len(s.identity_map.keys())
 56
-# Find earliest / latest observation for this entity
->>> (o.obs_earliest.time, o.obs_latest.time)
 # Load only observations within a certain time range, e.g. first 2 days
->>> o.obs_as_dst.filter(sch.Observation.time < o.obs_earliest.time + 2).all()
+>>> o.obs_as_dst.filter(sch.Observation.time < arrow.get('2021-02-01')).all()
 ...
 ```
 """

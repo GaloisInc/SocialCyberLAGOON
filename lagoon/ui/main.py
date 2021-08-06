@@ -17,12 +17,19 @@ class DbEncoder:
         if o is None:
             return o
 
-        d = dataclasses.asdict(o)
-        if isinstance(o, (sch.Entity, sch.Observation)):
+        try:
+            d = dataclasses.asdict(o)
+        except:
+            raise ValueError(type(o))
+        if isinstance(o, (sch.Entity, sch.Observation, sch.FusedEntity,
+                sch.FusedObservation)):
             d['type'] = d['type'].value
         else:
             # Assume other object types are JSON-compatible.
             pass
+
+        if isinstance(o, sch.FusedEntity) and 'fusions' in o.__dict__:
+            d['fusions'] = [DbEncoder.encode(f) for f in o.fusions]
 
         d = {k:
                 arrow.get(v).timestamp() if isinstance(v, datetime.datetime)
@@ -39,39 +46,58 @@ class Client(vuespa.Client):
         pass
     async def api_entity_random(self):
         async with lagoon.db.connection.get_session_async() as sess:
-            q = await sess.execute(sa.select(sch.Entity).limit(1))
+            q = await sess.execute(sa.select(sch.FusedEntity).limit(1))
             o = q.scalar()
             return DbEncoder.encode(o)
     async def api_entity_get(self, i):
         async with lagoon.db.connection.get_session_async() as sess:
-            q = await sess.execute(sa.select(sch.Entity).filter(sch.Entity.id == i))
-            o = q.scalar()
-            return DbEncoder.encode(o)
+            def o_sync(session):
+                q = session.execute(sa.select(sch.FusedEntity).filter(sch.FusedEntity.id == i))
+                o = q.scalar()
+                # Load fusions
+                o.fusions
+                return o
+            r = await sess.run_sync(o_sync)
+            return DbEncoder.encode(r)
     async def api_entity_get_obs(self, i, t_start, t_end):
         """Returns [as src, as dst]"""
         t_start = arrow.get(t_start).datetime.replace(tzinfo=None)
         t_end = arrow.get(t_end).datetime.replace(tzinfo=None)
         async with lagoon.db.connection.get_session_async() as sess:
-            q = await sess.execute(sa.select(sch.Entity).filter(sch.Entity.id == i))
-            o = q.scalar()
             def o_sync(session):
-                query = sa.and_(sch.Observation.time >= t_start,
-                        sch.Observation.time <= t_end)
-                return o.obs_as_src.filter(query).all(), o.obs_as_dst.filter(query).all()
+                q = session.execute(sa.select(sch.FusedEntity).filter(sch.FusedEntity.id == i))
+                o = q.scalar()
+                query = sa.and_(sch.FusedObservation.time >= t_start,
+                        sch.FusedObservation.time <= t_end)
+
+                q_src = (
+                        sa.orm.dynamic.Query(sch.FusedObservation, session=session)
+                        .where(sa.orm.with_parent(o, sch.FusedEntity.obs_as_src))
+                        .filter(query)
+                        .all())
+                q_dst = (
+                        sa.orm.dynamic.Query(sch.FusedObservation, session=session)
+                        .where(sa.orm.with_parent(o, sch.FusedEntity.obs_as_dst))
+                        .filter(query)
+                        .all())
+                return q_src, q_dst
             src, dst = await sess.run_sync(o_sync)
             return [DbEncoder.encode(o) for o in src + dst]
     async def api_entity_obs_adjacent(self, i, t_start, t_end):
         t_start = arrow.get(t_start).datetime.replace(tzinfo=None)
         t_end = arrow.get(t_end).datetime.replace(tzinfo=None)
         async with lagoon.db.connection.get_session_async() as sess:
-            O = sch.Observation
-            E = sch.Entity
-            o = (await sess.execute(sa.select(E).filter(E.id == i))).scalar()
+            O = sch.FusedObservation
+            E = sch.FusedEntity
             def o_sync(session):
+                o = session.execute(sa.select(E).filter(E.id == i)).scalar()
                 q = (O.time < t_start)
+                obs_base = sa.orm.dynamic.Query(sch.FusedObservation, session=session)
+                obs_as_src = obs_base.with_parent(o, sch.FusedEntity.obs_as_src)
+                obs_as_dst = obs_base.with_parent(o, sch.FusedEntity.obs_as_dst)
                 before = [
-                        o.obs_as_src.filter(q).order_by(O.time.desc()).limit(1).scalar(),
-                        o.obs_as_dst.filter(q).order_by(O.time.desc()).limit(1).scalar()]
+                        obs_as_src.filter(q).order_by(O.time.desc()).limit(1).scalar(),
+                        obs_as_dst.filter(q).order_by(O.time.desc()).limit(1).scalar()]
                 before = [b for b in before if b is not None]
                 if before:
                     before = sorted(before, key=lambda m: -arrow.get(m.time).timestamp())[0]
@@ -79,8 +105,8 @@ class Client(vuespa.Client):
                     before = None
                 q = (O.time > t_end)
                 after = [
-                        o.obs_as_src.filter(q).order_by(O.time).limit(1).scalar(),
-                        o.obs_as_dst.filter(q).order_by(O.time).limit(1).scalar()]
+                        obs_as_src.filter(q).order_by(O.time).limit(1).scalar(),
+                        obs_as_dst.filter(q).order_by(O.time).limit(1).scalar()]
                 after = [b for b in after if b is not None]
                 if after:
                     after = sorted(after, key=lambda m: arrow.get(m.time).timestamp())[0]
@@ -93,9 +119,9 @@ class Client(vuespa.Client):
         """Find entities with name like s (replaces * with % for db)"""
         async with lagoon.db.connection.get_session_async() as sess:
             limit = 10
-            q = await sess.execute(sa.select(sch.Entity).filter(
+            q = await sess.execute(sa.select(sch.FusedEntity).filter(
                     # ~* is case-insensitive posix regex in postgres
-                    sch.Entity.name.op('~*')(s)).limit(limit))
+                    sch.FusedEntity.name.op('~*')(s)).limit(limit))
             q = [qq[0] for qq in q.all()]
 
             # See if there's an integer to search for in there
@@ -109,8 +135,8 @@ class Client(vuespa.Client):
             except ValueError:
                 pass
             else:
-                q_id = await sess.execute(sa.select(sch.Entity).filter(
-                        sch.Entity.id == maybe_id))
+                q_id = await sess.execute(sa.select(sch.FusedEntity).filter(
+                        sch.FusedEntity.id == maybe_id))
                 q = [qq[0] for qq in q_id.all()] + q
 
             # Convert to JS object
@@ -120,8 +146,8 @@ class Client(vuespa.Client):
         """Returns entity label for given id.
         """
         async with lagoon.db.connection.get_session_async() as sess:
-            q = await sess.execute(sa.select(sch.Entity).filter(
-                    sch.Entity.id == i))
+            q = await sess.execute(sa.select(sch.FusedEntity).filter(
+                    sch.FusedEntity.id == i))
             return repr(q.scalar())
 
 

@@ -2,6 +2,29 @@
 div.temporalview
   div.cytoscape(ref="cytoscape")
 
+  //- Width not working? See CSS
+  v-dialog(v-model="focusDetails" persistent)
+    v-card(style="display: flex; flex-direction: column; max-height: inherit")
+      v-card-title {{cy.$id(focusId).data('repr')}}
+      v-card-text(style="flex-grow: 1; flex-shrink: 1; overflow-y: auto")
+        table.attrs
+          tr(v-for="[k, v] of Object.entries(cy.$id(focusId).data('attrs') || {})")
+            td.key {{k}}
+            td.value {{v}}
+          tr(v-for="obj of cy.$id(focusId).connectedEdges().toArray()")
+            td.key
+              //- Two equal for str compare
+              span(v-if="obj.data('source') == focusId") obs_as_src
+              span(v-else) obs_as_dst
+            td.value
+              span {{obj.data('repr')}}
+          //- Entity shows fusions
+          tr(v-if="!cy.$id(focusId).data('target')" v-for="fuse of cy.$id(focusId).data('fusions')")
+            td.key fusion
+            td.value {{fuse.id_other}} {{fuse.comment}}
+      v-card-actions
+        v-btn(color="primary" @click="focusDetails = false") Close
+
   div.tooltips(:refresh="cyUpdateNumber")
     div(v-for="id of cyTooltips.keys()" :key="id" :style="tooltipStyle(id)")
       template(v-if="cy.$id(id).data('target')")
@@ -51,7 +74,28 @@ div.temporalview
       //- TODO:
         span cluster files based on directory structure...
 </template>
-<style scoped lang="scss">
+<style lang="scss">
+
+.v-overlay__content {
+  max-width: 90vw !important;
+  max-height: 80vh !important;
+}
+
+table.attrs {
+  tr ~ tr td {
+    border-top: solid 2px #ccc;
+  }
+  td {
+    vertical-align: top;
+    white-space: pre-wrap;
+    word-break: break-all;
+
+    &.key {
+      min-width: 4em;
+    }
+  }
+}
+
 .temporalview {
   position: relative;
   height: 100vh;
@@ -132,6 +176,7 @@ export default defineComponent({
       cyUpdateHandle: null as any,
       cyUpdateNumber: 0, // Hack for pan to update tooltips
       dayjs,
+      focusDetails: false,
       loadSetCurrent: 0,
       loadSetComplete: 0,
       mountedFlag: false,
@@ -384,7 +429,15 @@ export default defineComponent({
     this.cy.on('position pan zoom resize', () => {this.cyWasUpdated();});
     this.cy.on('tap', 'node', (e: any) => {
       const id = e.target.id();
-      if (this.cyIsEntity(id)) this.$emit('update:focusId', id);
+      if (this.cyIsEntity(id)) {
+        const eId = +id;
+        if (this.focusId === eId) {
+          this.focusDetails = true;
+        }
+        else {
+          this.$emit('update:focusId', eId);
+        }
+      }
       else if (this.cyIsLoadLimited(id)) {
         (async () => {
           await this.loadEntityObservations(this.cy.$id(id).data('loadId'),
@@ -524,25 +577,27 @@ export default defineComponent({
       const [before, after] = await this.$vuespa.call('entity_obs_adjacent',
           focusId, ts, te);
       if (before !== null) {
+        let repr = `Next earliest event: ${this.dbTimeToDisplay(before.time)}`;
         this.cy.add([
             {data: {id: 'time-eventBefore',
-              repr: `Next earliest event: ${this.dbTimeToDisplay(before.time)}`,
+              repr: repr,
               isTime: true,
               time: before.time,
               hintColor: this.colors[0]}},
             {data: {source: this.cyIdEntity(this.focusId), target: 'time-eventBefore',
-              time: before.time}},
+              repr: repr, time: before.time}},
         ]);
       }
       if (after !== null) {
+        let repr = `Next latest event: ${this.dbTimeToDisplay(after.time)}`;
         this.cy.add([
             {data: {id: 'time-eventAfter',
-              repr: `Next latest event: ${this.dbTimeToDisplay(after.time)}`,
+              repr: repr,
               isTime: true,
               time: after.time,
               hintColor: this.colors[this.colors.length-1]}},
             {data: {source: this.cyIdEntity(this.focusId), target: 'time-eventAfter',
-              time: after.time}},
+              repr: repr, time: after.time}},
         ]);
       }
 

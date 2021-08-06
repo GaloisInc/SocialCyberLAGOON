@@ -21,4 +21,15 @@ Note that `./lagoon_cli.py` is a CLI for running common LAGOON functions.
 4. Run `./lagoon_cli.py db reset` to delete / create / set up the database.
 5. Clone e.g. [the CPython repository](https://github.com/python/cpython) somewhere.
 6. Run `./lagoon_cli.py ingest git load <path/to/cpython>` to extract information from git into the LAGOON database. This took just under two hours on my laptop.
+7. Run `./lagoon_cli.py ingest ocean_pickle load ~/Downloads/python.pck` to extract information from OCEAN data.
+8. Run `./lagoon_cli.py fusion run` to fuse entities.
+9. Run `./lagoon_cli.py ui` to browse around.
+
+## Upgrading versions
+
+Sometimes, the database might get upgraded. To upgrade your database to the latest version, run:
+
+```sh
+$ ./lagoon_cli.py alembic -- upgrade head
+```
 

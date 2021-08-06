@@ -17,6 +17,9 @@ app.add_typer(db_app, name='db')
 from .dev import app as dev_app
 app.add_typer(dev_app, name='dev')
 
+from .fusion import app as fusion_app
+app.add_typer(fusion_app, name='fusion')
+
 from .ingest import app as ingest_app
 app.add_typer(ingest_app, name='ingest')
 
