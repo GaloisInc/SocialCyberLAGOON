@@ -38,9 +38,9 @@ class FusedEntity(sch.Base):
         q = sa.select(sa.literal(-1).label('id'), sa.literal(self.id).label('id_linked'))
         limit = []
         if time_min is not None:
-            limit = [FusedObservation.time >= time_min]
+            limit.append(FusedObservation.time >= time_min)
         if time_max is not None:
-            limit = [FusedObservation.time <= time_max]
+            limit.append(FusedObservation.time <= time_max)
         for i in range(k):
             q = sa.union(q,
                     sa.select(FusedObservation.id, FusedObservation.src_id).where(
