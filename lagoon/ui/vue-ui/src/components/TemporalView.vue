@@ -2,15 +2,20 @@
 div.temporalview
   div.cytoscape(ref="cytoscape")
 
+  //- More information about clicked object
   //- Width not working? See CSS
   v-dialog(v-model="focusDetails" persistent)
     v-card(style="display: flex; flex-direction: column; max-height: inherit")
       v-card-title {{cy.$id(focusId).data('repr')}}
       v-card-text(style="flex-grow: 1; flex-shrink: 1; overflow-y: auto")
-        table.attrs
+        table.attrs(:refresh="cyUpdateNumber")
           tr(v-for="[k, v] of Object.entries(cy.$id(focusId).data('attrs') || {})")
             td.key {{k}}
-            td.value {{v}}
+            td.value(v-if="typeof v === 'object' && v && v.$plugin !== undefined")
+              v-btn(@click="pluginDetails(cy.$id(focusId), k, v.$plugin)") Run plugin
+            td.value(v-else-if="typeof v === 'object' && v && v.$html"
+                v-html="v.$html")
+            td.value(v-else) {{v}}
           tr(v-for="obj of cy.$id(focusId).connectedEdges().toArray()")
             td.key
               //- Two equal for str compare
@@ -35,6 +40,7 @@ div.temporalview
         span {{cy.$id(id).data('repr')}}
       div(v-for="[k, v] of Object.entries(cy.$id(id).data('attrs') || {})") {{k}}: {{new String(v).length > 100 ? new String(v).substring(0, 100) + '...' : new String(v) + ''}}
 
+  //- Toolbar
   div(style="position: absolute; left: 2em; right: 2em; bottom: 0.5em")
     div(style="display: flex; flex-direction: row; align-items: center; justify-items: center;")
       //- Fix width/height so loading/not doesn't cause UI jitter
@@ -88,7 +94,7 @@ table.attrs {
   td {
     vertical-align: top;
     white-space: pre-wrap;
-    word-break: break-all;
+    word-break: break-word;
 
     &.key {
       min-width: 4em;
@@ -762,6 +768,14 @@ export default defineComponent({
         promises.push(this.ensureObservation(f.id, f));
       }
       await Promise.all(promises);
+    },
+    pluginDetails(cyObj: any, plugName: string, plugIndex: number) {
+      (async () => {
+        const attrs = cyObj.data('attrs');
+        attrs[plugName] = await this.$vuespa.call('plugin_details_entity',
+            plugIndex, this.cyIdToEntity(cyObj.id()));
+        this.cyWasUpdated();
+      })().catch(console.error);
     },
     tooltipStyle(id: any) {
       const pos = this.cy.$id(id).renderedBoundingBox();

@@ -5,6 +5,7 @@ This tool consists of many sub-commands; see below modules (or commandline
 """
 
 import typer
+from typing import List
 
 app = typer.Typer()
 
@@ -50,9 +51,11 @@ def shell():
 
 
 @app.command()
-def ui():
-    """Launches the UI.
+def ui(plugins: List[str]=typer.Argument(None)):
+    """Launches the UI. Optionally supports plugins in form of:
+    `module_path[,classname][:argument]`. `classname` only required when there
+    is more than one class in the file.
     """
     import lagoon.ui.main
-    lagoon.ui.main.main()
+    lagoon.ui.main.main(plugins)
 

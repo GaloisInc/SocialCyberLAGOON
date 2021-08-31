@@ -1,13 +1,62 @@
 
+from .plugin import Plugin
+
 import lagoon.db.connection
 import lagoon.db.schema as sch
 
 import arrow
+import collections
 import dataclasses
 import datetime
+import importlib
+import inspect
 import os
+import re
 import sqlalchemy as sa
+from typing import List
 import vuespa
+
+# Initialized on UI startup
+plugins_by_cap = collections.defaultdict(list)
+def _load_plugins(plugins):
+    """Given some list of strings like `"module_path,class_name:argument"`, load
+    the specified plugins.
+    """
+    for p in plugins:
+        pfile, pclass, parg = p, None, None
+        if ':' in pfile:
+            pfile, parg = pfile.split(':', 1)
+        if ',' in pfile:
+            pfile, pclass = pfile.split(',', 1)
+
+        if '/' in pfile or pfile.endswith('.py'):
+            # Assume this is an OS path. Try to convert it to a python module
+            # name.
+            assert not pfile.startswith('/'), 'Must be a normal python import'
+            if pfile.endswith('.py'):
+                pfile = pfile[:-3]
+
+            pfile = re.split(r'[/.]', pfile)
+        else:
+            pfile = pfile.split('.')
+
+        pmod = importlib.import_module('.'.join(pfile))
+        if pclass is None:
+            for k, v in pmod.__dict__.items():
+                if inspect.isclass(v) and issubclass(v, Plugin) and v is not Plugin:
+                    if pclass is not None:
+                        raise ValueError(f'More than 1 Plugin in {pfile}; '
+                                f'use e.g. `module.name,class_name` to '
+                                f'specify a single plugin class.')
+                    pclass = k
+        if pclass is None:
+            raise ValueError(f'No plugin found? {pfile}')
+
+        cls = getattr(pmod, pclass)
+        inst = cls(parg)
+        for cap in inst.plugin_caps():
+            plugins_by_cap[cap].append(inst)
+
 
 class DbEncoder:
     """Encode objects from sqlalchemy as JSON-compatible.
@@ -27,6 +76,11 @@ class DbEncoder:
         else:
             # Assume other object types are JSON-compatible.
             pass
+
+        if isinstance(o, (sch.Entity, sch.FusedEntity)):
+            for pi, p in enumerate(plugins_by_cap['plugin_details_entity']):
+                p_name = p.plugin_name()
+                d['attrs'][p_name] = {'$plugin': pi}
 
         if isinstance(o, sch.FusedEntity) and 'fusions' in o.__dict__:
             d['fusions'] = [DbEncoder.encode(f) for f in o.fusions]
@@ -149,10 +203,29 @@ class Client(vuespa.Client):
             q = await sess.execute(sa.select(sch.FusedEntity).filter(
                     sch.FusedEntity.id == i))
             return repr(q.scalar())
+    async def api_plugin_details_entity(self, p, i):
+        """Returns the information for the given entity from a plugin.
+
+        Args:
+            p: plugin index
+            i: entity ID
+        """
+        plugin = plugins_by_cap['plugin_details_entity'][p]
+        async with lagoon.db.connection.get_session_async() as sess:
+            def o_sync(session):
+                ent = session.query(sch.FusedEntity).where(
+                        sch.FusedEntity.id == i).scalar()
+                return plugin.plugin_details_entity(ent)
+            result = await sess.run_sync(o_sync)
+        return {'$html': result}
 
 
-def main():
+def main(plugins: List[str]):
     """Typically called via `lagoon_cli.py ui [options]`"""
+    print('Loading plugins')
+    _load_plugins(plugins)
+
+    print('Starting UI')
     path = os.path.dirname(os.path.abspath(__file__))
     vuespa.VueSpa(os.path.join(path, 'vue-ui'), Client, port=8070).run()
 
