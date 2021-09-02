@@ -52,6 +52,12 @@ extensions = [
 autoapi_type = 'python'
 autoapi_dirs = ['../lagoon']
 
+mermaid_init_js = r'''mermaid.initialize({
+    // Allow all html content
+    securityLevel: 'loose',
+    startOnLoad:true,
+});'''
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
 

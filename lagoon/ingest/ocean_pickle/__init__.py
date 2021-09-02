@@ -1,4 +1,24 @@
 """Import data from an OCEAN .pck file.
+
+Data graph (entities are nodes, observations are labeled edges):
+
+.. mermaid::
+
+    flowchart LR
+    person[person<br/><div style='text-align:left'>+name<br/>+email</div>]
+    message[message<br/><div style='text-align:left'>+subject<br/>+body_text<br/> \
+        +computed_badwords_googleInstantB_any<br/> \
+        +computed_badwords_mrezvan94Harassment_Sexual<br/> \
+        +computed_badwords_mrezvan94Harassment_Racial<br/> \
+        +computed_badwords_mrezvan94Harassment_Appearance<br/> \
+        +computed_badwords_mrezvan94Harassment_Intelligence<br/> \
+        +computed_badwords_mrezvan94Harassment_Politics<br/> \
+        +computed_badwords_mrezvan94Harassment_Generic<br/> \
+        +computed_badwords_swearing_any</div>]
+    person -- message_from --> message
+    message -- message_to --> person
+    message -- message_cc --> person
+    message -- message_ref --> message
 """
 
 from lagoon.db.connection import get_session

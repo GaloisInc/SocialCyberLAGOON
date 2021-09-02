@@ -1,4 +1,15 @@
 """Import data from a git repository.
+
+Data graph (entities are nodes, observations are labeled edges):
+
+.. mermaid::
+
+    flowchart LR
+    person[person<br/><div style='text-align:left'>+name<br/>+email</div>]
+    git_commit[git_commit<br/><div style='text-align:left'>+message</div>]
+    person -- committed --> git_commit
+    person -- created --> git_commit
+    git_commit -- modified --> file
 """
 
 from lagoon.db.connection import get_session
