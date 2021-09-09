@@ -1,0 +1,2 @@
+# Ensemble methods
+Use simple machine learning algorithms (non- neural network) and obtain feature importances. Run `gradient_boosting_feature_importances()` and/or `random_forest_feature_importances()`.
