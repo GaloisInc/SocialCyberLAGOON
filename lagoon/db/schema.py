@@ -19,8 +19,21 @@ DbEnum = lambda e: sa.Enum(e, native_enum=False, length=255)
 DbJson = lambda: sj.mutable_json_type(dbtype=sa.dialects.postgresql.JSONB,
         nested=True)
 
+class DataClassMixin:
+    def asdict(self):
+        r = dataclasses.asdict(self)
+        def encobjs(r):
+            # Recursively remove sqlalchemy wrapper magic
+            if isinstance(r, dict):
+                return {k: encobjs(v) for k, v in r.items()}
+            elif isinstance(r, list):
+                return [encobjs(v) for v in r]
+            return r
+        return encobjs(r)
+
+
 @dataclasses.dataclass
-class Batch(Base):
+class Batch(Base, DataClassMixin):
     '''A batch of imported data. Ingesting could be expensive, and should be
     cached where possible. This table is used to track metadata for purging old
     information.
@@ -86,7 +99,7 @@ class ObservationTypeEnum(enum.Enum):
 
 
 @dataclasses.dataclass
-class Entity(Base):
+class Entity(Base, DataClassMixin):
     '''An entity within the extracted information.
 
     For general data processing, to get a neighborhood around a specific entity,
@@ -159,7 +172,7 @@ class Entity(Base):
 
 
 @dataclasses.dataclass
-class Observation(Base):
+class Observation(Base, DataClassMixin):
     '''An observation that was extracted.'''
     __tablename__ = 'observation'
     def __repr__(self, nodb=False):
@@ -226,7 +239,7 @@ class Observation(Base):
 
 
 @dataclasses.dataclass
-class EntityFusion(Base):
+class EntityFusion(Base, DataClassMixin):
     '''A record of entities being fused.
 
     Note that this table is PK'd by id_other -- that's because we want each

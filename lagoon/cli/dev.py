@@ -112,6 +112,10 @@ def up():
             volumes={
                 db_path: {'bind': '/var/lib/postgresql/data', 'mode': 'rw'},
             },
+            # If you start seeing "psycopg2.errors.DiskFull" on multithreaded
+            # applications, this is why
+            # https://stackoverflow.com/a/56754077/160205
+            shm_size='4g',
     )
 
 

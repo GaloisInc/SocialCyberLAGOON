@@ -14,7 +14,7 @@ _entity_is_lowest = sa.select(sch.EntityFusion).where(
         sch.EntityFusion.id_lowest == sch.Entity.id).exists()
 _entity_query = sa.select(sch.Entity).where(_entity_is_lowest).subquery()
 @dataclasses.dataclass
-class FusedEntity(sch.Base):
+class FusedEntity(sch.Base, sch.DataClassMixin):
     __table__ = _entity_query
     __repr__ = sch.Entity.__repr__
 
@@ -38,9 +38,13 @@ class FusedEntity(sch.Base):
         q = sa.select(sa.literal(-1).label('id'), sa.literal(self.id).label('id_linked'))
         limit = []
         if time_min is not None:
+            if isinstance(time_min, float):
+                time_min = datetime.datetime.fromtimestamp(time_min)
             limit.append(FusedObservation.time >= time_min)
         if time_max is not None:
-            limit.append(FusedObservation.time <= time_max)
+            if isinstance(time_max, float):
+                time_max = datetime.datetime.fromtimestamp(time_max)
+            limit.append(FusedObservation.time < time_max)
         for i in range(k):
             q = sa.union(q,
                     sa.select(FusedObservation.id, FusedObservation.src_id).where(
@@ -49,13 +53,13 @@ class FusedEntity(sch.Base):
                         sa.select(FusedObservation.id, FusedObservation.dst_id).where(
                             FusedObservation.src_id == q.c.id_linked, *limit))
                     )
-        obj_query = sa.select(FusedObservation).where(
+        sess = sa.orm.object_session(self)
+        obj_query = sess.query(FusedObservation).where(
                 FusedObservation.id == q.c.id)
         # Pull in the entities efficiently
         obj_query = obj_query.options(sa.orm.selectinload(FusedObservation.dst))
         obj_query = obj_query.options(sa.orm.selectinload(FusedObservation.src))
-        sess = sa.orm.object_session(self)
-        return [o[0] for o in sess.execute(obj_query)]
+        return obj_query.all()
 
 
 # Rewrite FusedObservation s.t. the dst_id and src_id fields are replaced
@@ -71,7 +75,7 @@ _obs_query = (
         .join(_F2, _O.dst_id == _F2.id_other)
         ).subquery()
 @dataclasses.dataclass
-class FusedObservation(sch.Base):
+class FusedObservation(sch.Base, sch.DataClassMixin):
     __table__ = _obs_query
     __repr__ = sch.Observation.__repr__
 

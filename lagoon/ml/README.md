@@ -7,6 +7,13 @@ Most of the folders here correspond to different experiments. Additionally, ther
     - `data_toxicity`: Input data for experiment `graphsage`.
 - `results/`: This folder contains subfolders containing experimental results, tables, figures, etc. Download the complete backup from [this Google Drive folder](https://drive.google.com/drive/folders/1vMcBvJEW_serZ647iVOPT3nDFh_u_t2e?usp=sharing). Contact the Lagoon team to request access.
 
+## Other Guild-based experiments
+
+Run as e.g.:
+
+```sh
+$ guild run gcn_true_202108_v1 [-e to see flags]
+```
 
 ## Data Findings
 - Earliest and latest times in the whole `cpython` repo = `(datetime.datetime(1990, 8, 9, 14, 25, 15), datetime.datetime(2021, 6, 28, 22, 2, 18))`.

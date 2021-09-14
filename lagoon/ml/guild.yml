@@ -1,0 +1,9 @@
+gcn_true_202108_v1:
+  main: lagoon.ml.gcn_true_202108_v1.main
+  sourcecode:
+    root: '../../'
+    select:
+      - include: '*.py'
+  flags-import: all
+  flags-import-skip: []
+
