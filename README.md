@@ -1,15 +1,6 @@
 
 This is the LAGOON (acronym...) project source code.
 
-To build the docs:
-
-```sh
-$ pip install -r requirements-dev.txt
-$ cd docs
-$ make html
-$ open _build/html/index.html
-```
-
 # Getting started with development
 
 Note that `./lagoon_cli.py` is a CLI for running common LAGOON functions.
@@ -19,7 +10,8 @@ Note that `./lagoon_cli.py` is a CLI for running common LAGOON functions.
 3. Run `./lagoon_cli.py dev up` to launch an appropriately configured Postgres DB (and any other services required by LAGOON).
 4. (May run `./lagoon_cli.py db pgadmin` to launch PgAdmin pointed at this database)
 5. Either use a pre-populated database or build one from scratch (see two sections below).
-6. Run `./lagoon_cli.py ui` to browse around.
+6. Run `./lagoon_cli.py ui` to browse around visually.
+7. Run `./lagoon_cli.py shell` to interact with the database in a CLI.
 
 
 ## Using a pre-populated database
@@ -36,6 +28,19 @@ This method is preferred, as it saves a lot of time.
 3. Run `./lagoon_cli.py ingest git load <path/to/cpython>` to extract information from git into the LAGOON database. This took just under two hours on my laptop.
 4. Run `./lagoon_cli.py ingest ocean_pickle load ~/Downloads/python.pck` to extract information from OCEAN data.
 5. Run `./lagoon_cli.py fusion run` to fuse entities.
+
+# Documentation
+
+System documentation may be built with the following commands:
+
+```sh
+$ pip install -r requirements-dev.txt
+$ cd docs
+$ make html
+$ open _build/html/index.html
+```
+
+# Troubleshooting
 
 ## Docker crashes
 
