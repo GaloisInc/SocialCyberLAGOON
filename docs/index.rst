@@ -10,7 +10,7 @@ Welcome to LAGOON's documentation!
     :maxdepth: 2
     :caption: Contents:
 
-    autoapi/index
+    autoapi/lagoon/index
 
 
 Indices and tables
