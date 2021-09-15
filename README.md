@@ -8,10 +8,9 @@ Note that `./lagoon_cli.py` is a CLI for running common LAGOON functions.
 1. Run `pip install -r` on both `requirements*.txt` files to ensure your Python environment has LAGOON's dependencies.
 2. Also ensure you have Docker installed.
 3. Run `./lagoon_cli.py dev up` to launch an appropriately configured Postgres DB (and any other services required by LAGOON).
-4. (May run `./lagoon_cli.py db pgadmin` to launch PgAdmin pointed at this database)
-5. Either use a pre-populated database or build one from scratch (see two sections below).
-6. Run `./lagoon_cli.py ui` to browse around visually.
-7. Run `./lagoon_cli.py shell` to interact with the database in a CLI.
+4. Either use a pre-populated database or build one from scratch (see two sections below).
+5. Run `./lagoon_cli.py ui` to browse around visually.
+6. Run `./lagoon_cli.py shell` to interact with the database in a CLI.
 
 
 ## Using a pre-populated database
@@ -53,4 +52,15 @@ Sometimes, the database might get upgraded. To upgrade your database to the late
 ```sh
 $ ./lagoon_cli.py alembic -- upgrade head
 ```
+
+# Postgres: using pgadmin
+
+pgadmin is a popular tool for investigating PostgreSQL installations. To launch
+an instance of it pointing at the development database, call:
+
+```sh
+$ ./lagoon_cli.py db pgadmin
+```
+
+It may take up to a minute to actually open a browser tab.
 
