@@ -33,7 +33,6 @@ This method is preferred, as it saves a lot of time.
 System documentation may be built with the following commands:
 
 ```sh
-$ pip install -r requirements-dev.txt
 $ cd docs
 $ make html
 $ open _build/html/index.html
