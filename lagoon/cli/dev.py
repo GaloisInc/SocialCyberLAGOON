@@ -37,7 +37,8 @@ def backup_restore(fpath: pathlib.Path=typer.Argument(..., exists=True)):
     print('Restoring.')
     subprocess.check_call(
             ['docker', 'exec', container.id,
-                'dropdb', '-U', pg_env['PGUSER'], '-f', cfg['db']['db']],
+                'dropdb', '-U', pg_env['PGUSER'], '-f', cfg['db']['db'],
+                '--if-exists'],
             env=pg_env)
     subprocess.check_call(
             ['docker', 'exec', container.id,
