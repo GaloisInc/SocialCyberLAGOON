@@ -45,7 +45,7 @@ def shell():
     sess = lambda: get_session().__enter__()
 
     print(f'Use `sess()` for a session / schema module as `sch` / sqlalchemy as `sa`')
-    print(f'...Try something like `sess().execute(sa.select(sch.Entity).limit(1)).scalar()`')
+    print(f'...Try something like `sess().query(sch.FusedEntity).limit(1).scalar()`')
 
     import IPython; IPython.embed()
 
