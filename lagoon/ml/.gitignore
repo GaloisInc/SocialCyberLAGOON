@@ -1,4 +1,2 @@
 .spark_checkpoints/
-data/
-results/
 sandbox.ipynb

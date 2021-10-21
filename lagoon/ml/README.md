@@ -1,11 +1,6 @@
 # Machine Learning for Social Cyber
 
-Most of the folders here correspond to different experiments. Additionally, there are two folders not committed to Git version control:
-- `data/`: This folder contains subfolders containing data. Download the complete backup from [this Google Drive folder](https://drive.google.com/drive/folders/17hdA8WlL8KxRyoKn8qKI8iCaPG8bvekl?usp=sharing). Contact the Lagoon team to request access. Subfolders:
-    - `targets/`: Output (target) data for all experiments.
-    - `persons_toxicity/`: Input data for experiments `gmlp` and `ensemble_methods`.
-    - `data_toxicity`: Input data for experiment `graphsage`.
-- `results/`: This folder contains subfolders containing experimental results, tables, figures, etc. Download the complete backup from [this Google Drive folder](https://drive.google.com/drive/folders/1vMcBvJEW_serZ647iVOPT3nDFh_u_t2e?usp=sharing). Contact the Lagoon team to request access.
+Most of the folders here correspond to different experiments. Running some of these experiments requires cloning the [`lagoon-artifacts` repository](https://gitlab-ext.galois.com/lagoon/lagoon-artifacts) as a sibling to this repository. Input data for the experiments and output results produced from running them are stored in `lagoon-artifacts`.
 
 ## Other Guild-based experiments
 

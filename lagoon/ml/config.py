@@ -2,8 +2,19 @@ import os
 import torch
 
 
-DATA_FOLDER = os.path.dirname(os.path.abspath(__file__)) + '/data'
-RESULTS_FOLDER = os.path.dirname(os.path.abspath(__file__)) + '/results'
+lagoon_artifacts_folder = os.path.join(
+    os.path.dirname( #Parent directory containing the lagoon repo
+        os.path.dirname( #lagoon/
+            os.path.dirname( #lagoon/
+                os.path.dirname(os.path.abspath(__file__)) #ml/
+            )
+        )
+    ),
+    'lagoon-artifacts'
+)
+assert os.path.isdir(lagoon_artifacts_folder), 'ERROR: lagoon-artifacts repository not found. Please clone the lagoon-artifacts repo from "https://gitlab-ext.galois.com/lagoon/lagoon-artifacts" as a sibling to the lagoon repo.'
+DATA_FOLDER = os.path.join(lagoon_artifacts_folder, 'data')
+RESULTS_FOLDER = os.path.join(lagoon_artifacts_folder, 'results')
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
