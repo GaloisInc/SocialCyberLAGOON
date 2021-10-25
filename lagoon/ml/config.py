@@ -17,5 +17,9 @@ DATA_FOLDER = os.path.join(lagoon_artifacts_folder, 'data')
 RESULTS_FOLDER = os.path.join(lagoon_artifacts_folder, 'results')
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+LOSSFUNC_MAPPING = {
+    'L1': torch.nn.L1Loss(),
+    'L2': torch.nn.MSELoss()
+}
 
 TOXICITY_CATEGORIES = [f'computed_badwords_{category}' for category in ['googleInstantB_any', 'swearing_any', 'mrezvan94Harassment_Appearance', 'mrezvan94Harassment_Generic', 'mrezvan94Harassment_Intelligence', 'mrezvan94Harassment_Politics', 'mrezvan94Harassment_Racial', 'mrezvan94Harassment_Sexual']]

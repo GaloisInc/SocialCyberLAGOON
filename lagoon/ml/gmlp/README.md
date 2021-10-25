@@ -21,5 +21,4 @@ for person,target in persons,targets:
 `../data/persons_toxicity/`
 
 ## Running
-Run `run_network_wrapper()`. Variables are self-explanatory.
-
+Run `run_expt()` to get a number of data splits, pick the best hyperparameter config for each via validation, and find test performance of this. To do hyperparameter search on a single data split, run `hyp_search_wrapper()`. Run `run_network_wrapper()` to train and validate a single net.

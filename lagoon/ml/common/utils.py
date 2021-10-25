@@ -5,12 +5,12 @@ import random
 
 import numpy as np
 import torch
-from torch import nn
 import matplotlib.pyplot as plt
 
 import sqlalchemy as sa
 from lagoon.db.connection import get_session
 from lagoon.db import schema as sch
+from lagoon.ml.config import *
 
 
 ########################################################################
@@ -26,29 +26,30 @@ def set_seed(seed):
     random.seed(seed)
 
 
-def get_naive_performance(y, mode='L1'):
+def get_naive_performance(y, lossfunc):
     """
     Given targets `y`, find the performance of a naive predictor
-    Mode can be 'L1' or 'L2'
     """
-    y = torch.as_tensor(y)
+    y = torch.as_tensor(y, dtype=torch.float32, device=DEVICE)
+    ones = torch.ones(y.shape[0], dtype=torch.float32, device=DEVICE)
     
-    if mode=='L1':
-        naive_guess = torch.median(y)*torch.ones(y.shape[0])
-        naive_loss = nn.L1Loss()(naive_guess,y)
-    
-    elif mode=='L2':
-        naive_guess = torch.mean(y)*torch.ones(y.shape[0])
-        naive_loss = nn.MSELoss()(naive_guess,y)
+    if lossfunc=='L1':
+        naive_guess = torch.median(y)*ones
+    elif lossfunc=='L2':
+        naive_guess = torch.mean(y)*ones
+    naive_loss = LOSSFUNC_MAPPING[lossfunc](naive_guess,y)
 
     return naive_loss
 
 
-def plot_stats(stats, foldername):
+def plot_stats(stats, foldername, naive_val_loss=None):
+    numepochs = len(stats['train_loss'])
     plt.figure()
-    plt.plot(stats['epoch'],stats['train_loss'], c='b', label='Train loss')
+    plt.plot(range(1,numepochs+1),stats['train_loss'], c='b', label='Train loss')
     if stats['val_loss']:
-        plt.plot(stats['epoch'],stats['val_loss'], c='r', label='Validation loss')
+        plt.plot(range(1,numepochs+1),stats['val_loss'], c='r', label='Validation loss')
+    if naive_val_loss:
+        plt.axhline(y=naive_val_loss, c='k',linestyle='dashed', label='Naive validation loss')
     plt.xlabel('Epoch')
     plt.legend()
     plt.grid()
@@ -65,8 +66,8 @@ def plot_stats(stats, foldername):
 
 def get_entities_from_obs(obs):
     """
-    Given a list or query of observations `obs`, get all entities and their IDs which are connected to those observations
-    Entities and entity_ids are deduplicated and returned as lists
+    Given a list or query of observations `obs`, get all entity IDs which are connected to those observations
+    Entity_ids are deduplicated and returned as a list
     """
     entity_ids = set()
     for ob in obs:

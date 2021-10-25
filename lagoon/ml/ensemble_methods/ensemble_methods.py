@@ -42,7 +42,7 @@ def gradient_boosting_feature_importances():
         data = get_persons_toxicity(
             target_type='activity',
             start_year=2001,
-            split=0.7,
+            splits=(0.7,1.0),
             scaling='log',
             remove_all_zero_samples=True
         )
@@ -91,7 +91,7 @@ def random_forest_feature_importances():
         data = get_persons_toxicity(
             target_type='activity',
             start_year=2001,
-            split=0.7,
+            splits=(0.7,1.0),
             scaling='log',
             remove_all_zero_samples=True
         )
