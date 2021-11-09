@@ -83,6 +83,7 @@ class EntityTypeEnum(enum.Enum):
     file = 'file'
     message = 'message'
     person = 'person'
+    pep = 'pep'
 
 
 class ObservationTypeEnum(enum.Enum):
@@ -96,6 +97,8 @@ class ObservationTypeEnum(enum.Enum):
     message_ref = 'message_ref'
     message_to = 'message_to'
     modified = 'modified'
+    superseded_by = 'superseded_by'
+    requires = 'requires'
 
 
 @dataclasses.dataclass

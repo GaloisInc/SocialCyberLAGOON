@@ -6,7 +6,7 @@ Data graph (entities are nodes, observations are labeled edges):
 
     flowchart LR
     person[person<br/><div style='text-align:left'>+name<br/>+email</div>]
-    git_commit[git_commit<br/><div style='text-align:left'>+message</div>]
+    git_commit[git_commit<br/><div style='text-align:left'>+message<br/>+time</div>]
     person -- committed --> git_commit
     person -- created --> git_commit
     git_commit -- modified --> file
@@ -14,6 +14,7 @@ Data graph (entities are nodes, observations are labeled edges):
 
 from lagoon.db.connection import get_session
 import lagoon.db.schema as sch
+from lagoon.ingest.util import clean_for_ingest
 
 import arrow
 import collections
@@ -83,6 +84,7 @@ def load_git_repo(path: Path):
 
         commit_time = arrow.get(s.authored_date).datetime
         db_commit = db_get_commit(s)
+        db_commit.attrs['time'] = commit_time.timestamp()  # float for JSON
         db_author = db_get_person(s.author)
         db_committer = db_get_person(s.committer)
 
@@ -101,6 +103,8 @@ def load_git_repo(path: Path):
 
     # Now that we have a web, commit it to DB
     with get_session() as sess:
+        clean_for_ingest(session=sess)
+
         resource = f'ingest-git-{repo_name}'
         sch.Batch.cls_reset_resource(resource, session=sess)
 

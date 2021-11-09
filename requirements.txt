@@ -1,6 +1,7 @@
 alembic
 arrow
 asyncpg
+beautifulsoup4
 GitPython
 psycopg2-binary
 shortuuid

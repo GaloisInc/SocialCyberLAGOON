@@ -6,7 +6,16 @@ Data graph (entities are nodes, observations are labeled edges):
 
     flowchart LR
     person[person<br/><div style='text-align:left'>+name<br/>+email</div>]
-    message[message<br/><div style='text-align:left'>+subject<br/>+body_text<br/> \
+    message[message<br/><div style='text-align:left'>+subject<br/>+body_text<br/>+origin_filename<br/>+time<br/> \
+        +flagged_abuse<br/> \
+        +badwords_ex_googleInstantB_any<br/> \
+        +badwords_ex_mrezvan94Harassment_Sexual<br/> \
+        +badwords_ex_mrezvan94Harassment_Racial<br/> \
+        +badwords_ex_mrezvan94Harassment_Appearance<br/> \
+        +badwords_ex_mrezvan94Harassment_Intelligence<br/> \
+        +badwords_ex_mrezvan94Harassment_Politics<br/> \
+        +badwords_ex_mrezvan94Harassment_Generic<br/> \
+        +badwords_ex_swearing_any \
         +computed_badwords_googleInstantB_any<br/> \
         +computed_badwords_mrezvan94Harassment_Sexual<br/> \
         +computed_badwords_mrezvan94Harassment_Racial<br/> \
@@ -23,6 +32,7 @@ Data graph (entities are nodes, observations are labeled edges):
 
 from lagoon.db.connection import get_session
 import lagoon.db.schema as sch
+from lagoon.ingest.util import clean_for_ingest
 
 import arrow
 import collections
@@ -119,10 +129,16 @@ def load_pickle(path: Path):
         to = user_resolve('to')
         cc = user_resolve('cc')
 
+        try:
+            message_time = _date_field_resolve(m['date'], m['raw_date_string'])
+        except:
+            raise ValueError(f"Bad date: {m['message_id']} {m['date']} {m['raw_date_string']}")
+
         message = db_get_message(m['message_id'], origin=m['filename'])
         message.attrs['subject'] = m['subject']
         message.attrs['body_text'] = m['body_text']
         message.attrs['flagged_abuse'] = m['flagged_abuse']
+        message.attrs['time'] = message_time.timestamp()  # float for JSON
 
         # Some ocean data has \x00 bytes... remove those
         message.attrs = {k: v if not isinstance(v, str) else v.replace('\x00', '<NULL>')
@@ -131,10 +147,6 @@ def load_pickle(path: Path):
         badwords_queue_in.put((m['message_id'], m['body_text']))
         badwords_queue_written += 1
 
-        try:
-            message_time = _date_field_resolve(m['date'], m['raw_date_string'])
-        except:
-            raise ValueError(f"Bad date: {m['message_id']} {m['date']} {m['raw_date_string']}")
         if frm is not None:
             message.obs_as_dst.append(sch.Observation(src=frm,
                 type=sch.ObservationTypeEnum.message_from,
@@ -175,6 +187,8 @@ def load_pickle(path: Path):
     print('Writing to database...')
 
     with get_session() as sess:
+        clean_for_ingest(sess)
+
         resource = f'ocean-{os.path.basename(path)}'
         sch.Batch.cls_reset_resource(resource, session=sess)
 

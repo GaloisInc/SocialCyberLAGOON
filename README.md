@@ -26,7 +26,8 @@ This method is preferred, as it saves a lot of time.
 2. Clone e.g. [the CPython repository](https://github.com/python/cpython) somewhere.
 3. Run `./lagoon_cli.py ingest git load <path/to/cpython>` to extract information from git into the LAGOON database. This took just under two hours on my laptop.
 4. Run `./lagoon_cli.py ingest ocean_pickle load ~/Downloads/python.pck` to extract information from OCEAN data.
-5. Run `./lagoon_cli.py fusion run` to fuse entities.
+5. Run `./lagoon_cli.py ingest python_peps load` to extract information regarding Python PEPs into the LAGOON database.
+6. Run `./lagoon_cli.py fusion run` to fuse entities.
 
 # Documentation
 
