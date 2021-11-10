@@ -17,7 +17,7 @@ Note that `./lagoon_cli.py` is a CLI for running common LAGOON functions.
 
 This method is preferred, as it saves a lot of time.
 
-1. Retrieve a backup of the database, named like `lagoon-db-backup-DATE` in [Google Drive](https://drive.google.com/drive/folders/0AKhGiIfGF_XOUk9PVA).
+1. Retrieve a backup of the database, named like `lagoon-db-backup-DATE` in [Google Drive](https://drive.google.com/drive/folders/1WkIJAeAinhcOXxtDgDz7ZOTVSmL_Jwaz).
 2. Run `./lagoon_cli.py dev backup-restore path/to/backup` to restore the database.
 
 ## Building a database from scratch
