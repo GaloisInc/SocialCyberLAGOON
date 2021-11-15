@@ -10,7 +10,8 @@ to the module.
 import os, sys
 _path = os.path.dirname(os.path.abspath(__file__))
 
-os.environ['PYTHONPATH'] = _path + ':' + os.environ.get('PYTHONPATH', '')
-from lagoon.cli import app
-app()
+if __name__ == "__main__":
+    os.environ['PYTHONPATH'] = _path + ':' + os.environ.get('PYTHONPATH', '')
+    from lagoon.cli import app
+    app()
 

@@ -83,7 +83,7 @@ def save_top_persons_monthly_obs(num_persons=50, num_obs_threshold=None):
     else:
         top_persons = person_stats['id'][person_stats['num_obs'] >= num_obs_threshold]
 
-    year_month_cols = get_year_month_cols('1990-08-09','2021-06-28') #NOTE: these are for batch_id=3. Will need to be changed for other batch_ids.
+    year_month_cols = get_year_month_cols('1990-08-09','2021-06-28') #NOTE: these are for the git-python data. Will need to be changed for other batches.
     year_month_cols = pd.DataFrame({k:len(top_persons)*[0] for k in year_month_cols})
     top_persons = pd.concat((top_persons.to_frame(),year_month_cols), axis=1)
     

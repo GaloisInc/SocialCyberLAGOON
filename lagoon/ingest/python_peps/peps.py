@@ -1,30 +1,9 @@
 import os
-import copy
 import csv
 from tqdm import tqdm
 import requests
 from bs4 import BeautifulSoup
 from typing import Dict, Any
-
-
-pep_types = {
-    'I': 'Informational',
-    'P': 'Process',
-    'S': 'Standards Track'
-}
-
-pep_statuses_standards = {
-    'A': 'Accepted',
-    'D': 'Deferred',
-    'F': 'Final',
-    'P': 'Provisional',
-    'R': 'Rejected',
-    'S': 'Superseded',
-    'W': 'Withdrawn'
-}
-
-pep_statuses_not_standards = copy.deepcopy(pep_statuses_standards)
-pep_statuses_not_standards['A'] = 'Active'
 
 
 def get_soup(url: str) -> BeautifulSoup:
@@ -81,16 +60,9 @@ def get_peps(write_peps_to_csv: bool = False, write_authors_to_csv: bool = False
     peps = {}
     
     for row in tqdm(num_index_rows):
-        row_code, row_number, row_title, row_authors = row.find_all("td")
-
-        ## PEP type and status
-        type_code = row_code.text[0]
-        type_ = pep_types[type_code]
-        try:
-            status_code = row_code.text[1]
-            status = pep_statuses_standards[status_code] if type_code == 'S' else pep_statuses_not_standards[status_code]
-        except IndexError:
-            status = ''
+        _, row_number, row_title, row_authors = row.find_all("td")
+        # First element is row code, which we will get from the PEP page instead of here.
+        # This is because row code status can sometimes be blank, while the PEP page gives the actual status
 
         ## PEP number
         number = row_number.text
@@ -116,10 +88,15 @@ def get_peps(write_peps_to_csv: bool = False, write_authors_to_csv: bool = False
         ## Other PEP attributes obtained from the specific PEP page
         pep_soup = get_soup(url=url)
         info_table_rows = pep_soup.find("table", class_="rfc2822 docutils field-list").find_all("tr")
-        created = replaces = superseded_by = requires = ''
+        type_ = status = created = replaces = superseded_by = requires = '' # in case any of these fields are missing, they will default to ''
         for info_table_row in info_table_rows:
             
-            if info_table_row.find("th").text.startswith("Created"):
+            if info_table_row.find("th").text.startswith("Type"):
+                type_ = info_table_row.find("td").text #NOTE: possible types = ['Process', 'Informational', 'Standards Track']
+            elif info_table_row.find("th").text.startswith("Status"):
+                status = info_table_row.find("td").text #NOTE: possible statuses = ['Active', 'Superseded', 'Withdrawn', 'Rejected', 'Final', 'Deferred', 'April Fool!', 'Accepted', 'Draft', 'Provisional']
+            
+            elif info_table_row.find("th").text.startswith("Created"):
                 created = info_table_row.find("td").text
             
             # We should capture both replaces and superseded by because not all PEPs have complete info

@@ -1,4 +1,3 @@
-import arrow
 import os
 from tqdm import tqdm
 import pickle
@@ -36,8 +35,7 @@ def save_data_toxicity(start, end):
     
     with get_session() as sess:
         # Restrict persons
-        #TODO: delete batch id filtering later when data is more fair. Right now, only batch id 25 has messages with toxicity
-        persons = sess.query(sch.FusedEntity).where(sch.FusedEntity.id.in_(entity_ids)).where(sch.FusedEntity.type==sch.EntityTypeEnum.person).where(sch.FusedEntity.batch_id==25)
+        persons = sess.query(sch.FusedEntity).where(sch.FusedEntity.id.in_(entity_ids)).where(sch.FusedEntity.type==sch.EntityTypeEnum.person)
         
         print('Creating data...')
         
@@ -49,20 +47,14 @@ def save_data_toxicity(start, end):
             x_neighbors_interm = []
 
             ## Get neighbors
-            person_obs = person.obs_hops(1, time_min=arrow.get(start).datetime, time_max=arrow.get(end).datetime)
-            person_neighbor_ids = utils.get_entities_from_obs(person_obs)
-            person_neighbor_ids.remove(person.id)
-            person_neighbors = sess.query(sch.FusedEntity).where(sch.FusedEntity.id.in_(list(person_neighbor_ids)))
+            person_neighbors = utils.get_neighboring_entities(person, hop=1, start=start, end=end, return_self=False)
             
             ## For each node in current person + its neighbors
             for node in [person]+person_neighbors.all():
                 x_self = [node.attrs.get(key,0) for key in TOXICITY_CATEGORIES]
                 
                 ## Get neighbors and their features
-                obs = node.obs_hops(1, time_min=arrow.get(start).datetime, time_max=arrow.get(end).datetime)
-                neighbor_ids = utils.get_entities_from_obs(obs)
-                neighbor_ids.remove(node.id)
-                neighbors = sess.query(sch.FusedEntity).where(sch.FusedEntity.id.in_(list(neighbor_ids)))
+                neighbors = utils.get_neighboring_entities(node, hop=1, start=start, end=end, return_self=False)
                 x_neighbors = []
                 for neighbor in neighbors:
                     x_neighbors.append([neighbor.attrs.get(key,0) for key in TOXICITY_CATEGORIES])
@@ -188,5 +180,4 @@ def get_data_toxicity(target_type, start_year, split=0.7, scaling='log', remove_
 
 
 if __name__ == "__main__":
-    save_data_toxicity_wrapper(range(1999,2015))
-    save_data_toxicity_wrapper(range(2016,2020))
+    pass

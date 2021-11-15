@@ -2,6 +2,7 @@ import arrow
 import os
 import shortuuid
 import random
+from typing import List, Union
 
 import numpy as np
 import torch
@@ -64,7 +65,7 @@ def plot_stats(stats, foldername, naive_val_loss=None):
 # Database interaction utils
 ########################################################################
 
-def get_entities_from_obs(obs):
+def get_entity_ids_from_obs(obs: Union[List, sa.orm.query.Query]) -> List[int]:
     """
     Given a list or query of observations `obs`, get all entity IDs which are connected to those observations
     Entity_ids are deduplicated and returned as a list
@@ -76,7 +77,21 @@ def get_entities_from_obs(obs):
     return list(entity_ids)
 
 
-def get_entities_in_window(start, end, method=1):
+def get_neighboring_entities(entity: sch.FusedEntity, hop: int = 1, start: str = None, end: str = None, return_self: bool = False) -> sa.orm.query.Query:
+    """
+    Given an entity `entity`, get all the entities at `hop`-hop distance from it for a time window from `start` to `end`. If None, use beginning of time to end of time.
+    Return a query (instead of a list) so that additional SQL filtering can be applied if desired
+    If return_self is False, remove `entity` from the returned entities since we generally don't want to return itself
+    """
+    entity_ids = get_entity_ids_from_obs(entity.obs_hops(k=hop, time_min = None if not start else arrow.get(start).datetime, time_max = None if not end else arrow.get(end).datetime))
+    with get_session() as sess:
+        if not return_self:
+            entity_ids.remove(entity.id) #since get_entity_ids_from_obs also includes id of the entity itself
+        neighbors = sess.query(sch.FusedEntity).where(sch.FusedEntity.id.in_(list(entity_ids)))
+        return neighbors
+
+
+def get_entities_in_window(start: str, end: str, method: int = 1) -> List[int]:
     """
     Get all entities which are connected to observations in a given time window
 
@@ -102,7 +117,7 @@ def get_entities_in_window(start, end, method=1):
     if method==1:
         with get_session() as sess:
             obs = sess.query(sch.FusedObservation).where(sa.and_(sch.FusedObservation.time >= arrow.get(start).datetime, sch.FusedObservation.time <= arrow.get(end).datetime))
-        return get_entities_from_obs(obs)
+        return get_entity_ids_from_obs(obs)
     
     if method==2:
         entity_ids = []

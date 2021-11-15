@@ -1,4 +1,3 @@
-import arrow
 import os
 from tqdm import tqdm
 from typing import Tuple, Dict, List, Optional
@@ -31,21 +30,17 @@ def aggregate_attrs_of_neighbors(entity: sch.FusedEntity, attr_keys: List[str], 
     """
     attrs_aggr_all = {}
     
-    with get_session() as sess:
-        for hop in hops:
-            obs = entity.obs_hops(hop, time_min=arrow.get(start).datetime, time_max=arrow.get(end).datetime)
-            neighbor_ids = utils.get_entities_from_obs(obs)
-            # neighbor_ids.remove(entity.id) #Uncomment this if not following NOTE 1
-            neighbors = sess.query(sch.FusedEntity).where(sch.FusedEntity.id.in_(list(neighbor_ids)))
-            
-            attrs_all = {key:[] for key in attr_keys}
-            for neighbor in neighbors:
-                for key in attr_keys:
-                    attrs_all[key].append(neighbor.attrs.get(key,0))
-            
-            attrs_all = {f'hop{hop}_{key}': attrs_all[key] for key in attrs_all.keys()} #add prefix hop number to the keys
-            attrs_aggr = {key: np.sum(attrs_all[key]) for key in attrs_all.keys()} #NOTE: Aggregation is hardcoded to sum right now
-            attrs_aggr_all = {**attrs_aggr_all, **attrs_aggr}
+    for hop in hops:
+        neighbors = utils.get_neighboring_entities(entity=entity, hop=hop, start=start, end=end, return_self=True) # Set return_self=True if not following NOTE 1
+        
+        attrs_all = {key:[] for key in attr_keys}
+        for neighbor in neighbors:
+            for key in attr_keys:
+                attrs_all[key].append(neighbor.attrs.get(key,0))
+        
+        attrs_all = {f'hop{hop}_{key}': attrs_all[key] for key in attrs_all.keys()} #add prefix hop number to the keys
+        attrs_aggr = {key: np.sum(attrs_all[key]) for key in attrs_all.keys()} #NOTE: Aggregation is hardcoded to sum right now
+        attrs_aggr_all = {**attrs_aggr_all, **attrs_aggr}
     
     return attrs_aggr_all
 
@@ -63,8 +58,7 @@ def save_persons_toxicity(start: str, end: str, hops: List[int] = [1,2]) -> None
     
     with get_session() as sess:
         # Restrict persons
-        #TODO: delete batch id filtering later when data is more fair. Right now, only batch id 25 has messages with toxicity
-        persons = sess.query(sch.FusedEntity).where(sch.FusedEntity.id.in_(entity_ids)).where(sch.FusedEntity.type==sch.EntityTypeEnum.person).where(sch.FusedEntity.batch_id==25)
+        persons = sess.query(sch.FusedEntity).where(sch.FusedEntity.id.in_(entity_ids)).where(sch.FusedEntity.type==sch.EntityTypeEnum.person)
         
         print('Creating dataframe...')
         for person in tqdm(persons.all()):
