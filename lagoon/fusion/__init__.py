@@ -8,6 +8,7 @@ from lagoon.db.temptable import (temp_table_from_model, multi_session_dropper,
 
 import multiprocessing
 import random
+import re
 import sqlalchemy as sa
 import time
 import tqdm
@@ -40,8 +41,14 @@ def fusion_compute():
 
 def _fusion_compute(p):
     with get_session() as sess:
-        sess.execute(sa.text(r'''create or replace function fusion_name_munge(text) returns text as $$
-                select metaphone($1, 20)
+        # metaphone() by default ignores spaces, so use array magic to count
+        # them.
+        sess.execute(sa.text(r'''
+                create or replace function fusion_name_munge(text) 
+                    returns text as $$
+                select
+                    array_to_string(array_agg(metaphone(part, 20)), ' ')
+                    FROM unnest(string_to_array($1, ' ')) AS part
                 $$ language sql immutable'''))
 
         ETable = temp_table_from_model(sess, EntitySearch, multi_session=True)
@@ -136,13 +143,40 @@ def _fuse_entity(entity_id):
                             .values(id_lowest=low, id_other=high,
                                 comment=comment))
 
-                # Same email?
-                same = sess.execute(sa.select(ET).where(
-                        (ET.email == obj.email)
-                        & (ET.id != obj.id)
-                        ).order_by(ET.id).limit(1)).scalar()
-                if same is not None:
-                    add_to_group(obj.id, same.id, f'email match: {obj.email}')
+                # Same, valid email?
+                # FIXME dynamic -- at the moment this is Python-fixed
+                banned_list = {
+                        'a@b.c',
+                        'bogus@does.not.exist.com',
+                        'invalid@invalid.invalid',
+                        'john@doe.com',
+                        'mail.python.org@marco.sulla.e4ward.com',
+                        'me@privacy.net',
+                        'python-url@phaseit.net',
+                        'python@python.org',
+                        'python-dev@python.org',
+                        'python-help@python.org',
+                        'python-list@python.org',
+                        'support@superhost.gr',
+                        'user@compgroups.net/',
+
+                        # Wildcard list of bad domains
+                        '*@none.com',
+                        '*@nospam.com',
+                        '*@nospam.invalid',
+                        '*@null.com',
+                        '*@spam.com',
+                }
+                if (obj.email
+                        and re.sub(r'^.*?@', '*@', obj.email) not in banned_list
+                        and obj.email not in banned_list
+                        and re.search(r'^.*@.*(?<!example)\..*$', obj.email) is not None):
+                    same = sess.execute(sa.select(ET).where(
+                            (ET.email == obj.email)
+                            & (ET.id != obj.id)
+                            ).order_by(ET.id).limit(1)).scalar()
+                    if same is not None:
+                        add_to_group(obj.id, same.id, f'email match: {obj.email}')
 
                 # Same name? Don't allow for short names
                 if ' ' in obj.name and len(obj.name) > 5:
