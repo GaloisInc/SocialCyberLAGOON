@@ -12,14 +12,20 @@ from typing import Any, Dict
 # Limit to only those which are id_lowest, for safety
 _entity_is_lowest = sa.select(sch.EntityFusion).where(
         sch.EntityFusion.id_lowest == sch.Entity.id).exists()
-_entity_query = sa.select(sch.Entity).where(_entity_is_lowest).subquery()
+_entity_query = sa.select(
+        # Purposely omit fields like `batch_id` which do not apply to fused
+        # entity.
+        sch.Entity.id,
+        sch.Entity.name,
+        sch.Entity.type,
+        sch.Entity.attrs,
+        ).where(_entity_is_lowest).subquery()
 @dataclasses.dataclass
 class FusedEntity(sch.Base, sch.DataClassMixin):
     __table__ = _entity_query
     __repr__ = sch.Entity.__repr__
 
     id: int
-    batch_id: int
     name: str
     type: sch.EntityTypeEnum
     attrs: Dict[str, Any]
