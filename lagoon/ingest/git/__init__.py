@@ -84,6 +84,8 @@ def load_git_repo(path: Path):
 
         commit_time = arrow.get(s.authored_date).datetime
         db_commit = db_get_commit(s)
+        db_commit.attrs['commit_sha'] = s.hexsha
+        db_commit.attrs['message'] = s.message
         db_commit.attrs['time'] = commit_time.timestamp()  # float for JSON
         db_author = db_get_person(s.author)
         db_committer = db_get_person(s.committer)
@@ -95,11 +97,12 @@ def load_git_repo(path: Path):
                 type=sch.ObservationTypeEnum.committed,
                 time=arrow.get(s.committed_date).datetime))
 
-        for fpath in s.stats.files:
+        for fpath, fstats in s.stats.files.items():
             db_f = db_get_file(fpath)
             db_f.obs_as_dst.append(sch.Observation(src=db_commit,
                 type=sch.ObservationTypeEnum.modified,
-                time=commit_time))
+                time=commit_time,
+                attrs=fstats))
 
     # Now that we have a web, commit it to DB
     with get_session() as sess:
