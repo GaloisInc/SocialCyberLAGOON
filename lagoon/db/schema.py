@@ -57,6 +57,8 @@ class Batch(Base, DataClassMixin):
     # be monotonic for some definition.
     revision: str = sa.Column(sa.String)
 
+    computed_attrs = sa.orm.relationship('ComputedAttrs', back_populates='batch',
+            lazy='dynamic', cascade='all, delete')
     entities = sa.orm.relationship('Entity', back_populates='batch',
             lazy='dynamic', cascade='all, delete')
     observations = sa.orm.relationship('Observation', back_populates='batch',
@@ -73,6 +75,12 @@ class Batch(Base, DataClassMixin):
         """
         # SQL cascades cause other objects to be deleted.
         session.execute(sa.delete(cls).where(cls.resource == resource))
+
+
+class SuperTypeEnum(enum.Enum):
+    computed_attrs = 'computed_attrs'
+    entity = 'entity'
+    observation = 'observation'
 
 
 class EntityTypeEnum(enum.Enum):
@@ -102,7 +110,34 @@ class ObservationTypeEnum(enum.Enum):
 
 
 @dataclasses.dataclass
-class Entity(Base, DataClassMixin):
+class AttrsBase(Base, DataClassMixin):
+    '''Basically, because both Entities and Observations store their
+    type-specific data in an `attrs` field, and it can sometimes be useful to
+    retract / amend this information in subsequent ingests, we use `AttrsBase`
+    as a parent type for each.
+
+    f
+    '''
+    __tablename__ = 'attrs_base'
+
+    id: int = sa.Column(sa.Integer, primary_key=True)
+
+    super_type: str = sa.Column(DbEnum(SuperTypeEnum), nullable=False)
+
+    # Miscellaneous attributes describing this type (e.g., for a user, e-mail,
+    # twitter handle, etc; for an observation, the number of lines removed from
+    # a file by a git commit, etc)
+    attrs: Dict[str, Any] = sa.Column(DbJson(), nullable=False,
+            default=lambda: {})
+
+    __mapper_args__ = {
+            'polymorphic_on': 'super_type',
+    }
+
+
+
+@dataclasses.dataclass
+class Entity(AttrsBase, DataClassMixin):
     '''An entity within the extracted information.
 
     For general data processing, to get a neighborhood around a specific entity,
@@ -135,7 +170,8 @@ class Entity(Base, DataClassMixin):
         cls = self.__class__
         return f'<{cls.__module__}.{cls.__name__} {self.id}: {self.type} {self.name}>'
 
-    id: int = sa.Column(sa.Integer, primary_key=True)
+    id: int = sa.Column(sa.Integer, sa.ForeignKey('attrs_base.id'),
+            primary_key=True)
 
     # The batch which created this entity
     batch_id: int = sa.Column(sa.Integer,
@@ -151,13 +187,13 @@ class Entity(Base, DataClassMixin):
     # to coalesce their definitions of
     type: EntityTypeEnum = sa.Column(DbEnum(EntityTypeEnum), nullable=False)
 
-    # Any attributes -- ways of describing this entity's properties (e.g.,
-    # e-mail, twitter handle, an email vs a user, etc)
-    attrs: Dict[str, Any] = sa.Column(DbJson(), nullable=False, default=lambda: {})
-
     # Backlinks to observations -- created via `backref` in sqlalchemy
     # obs_as_dst
     # obs_as_src
+
+    __mapper_args__ = {
+            'polymorphic_identity': SuperTypeEnum.entity,
+    }
 
     def fused(self):
         """Returns a :class:`FusedEntity` which corresponds to this entity,
@@ -175,14 +211,12 @@ class Entity(Base, DataClassMixin):
 
 
 @dataclasses.dataclass
-class Observation(Base, DataClassMixin):
+class Observation(AttrsBase, DataClassMixin):
     '''An observation that was extracted.'''
     __tablename__ = 'observation'
     def __repr__(self, nodb=False):
         cls = self.__class__
         r = [f'<{cls.__module__}.{cls.__name__} {self.id}: ({self.type}']
-        if self.value is not None:
-            r.append(f'={self.value}')
         time_str = arrow.get(self.time).format('YYYY-MM-DD')
         r.append(f'@{time_str}')
         if not nodb:
@@ -196,7 +230,8 @@ class Observation(Base, DataClassMixin):
             r.append(f', {s}, {d})>')
         return ''.join(r)
 
-    id: int = sa.Column(sa.Integer, primary_key=True)
+    id: int = sa.Column(sa.Integer, sa.ForeignKey('attrs_base.id'),
+            primary_key=True)
 
     # For group deletion -- identifier of batch
     batch_id: int = sa.Column(sa.Integer,
@@ -205,30 +240,25 @@ class Observation(Base, DataClassMixin):
             index=True)
     batch = sa.orm.relationship('Batch', back_populates='observations')
 
-    # Basically "key: value" pair. Importantly, "type" is basically the "class"
-    # of the observation, and so any idea of directionality or other qualities
-    # of the observation other than its value should be attached to that
-    # information.
+    # Basically an observation specifies some typed relationship.
+    # Importantly, "type" is basically the "class" of the observation, and so
+    # any idea of directionality or other qualities of the observation
+    # that might be present should be attached to that information.
     type: ObservationTypeEnum = sa.Column(DbEnum(ObservationTypeEnum), nullable=False)
-    value: float = sa.Column(sa.Float)
 
     # UTC time of observation
     time: datetime.datetime = sa.Column(sa.DateTime, nullable=False)
 
-    # Miscellaneous attributes
-    attrs: Dict[str, Any] = sa.Column(DbJson(), nullable=False,
-            default=lambda: {})
-
     # Entities participating in this observation
     dst_id: int = sa.Column(sa.Integer,
-            sa.ForeignKey('entity.id', ondelete='CASCADE'),
+            sa.ForeignKey('entity.id'),
             nullable=False)
     dst = sa.orm.relationship('Entity',
             backref=sa.orm.backref('obs_as_dst', lazy='dynamic'),
             primaryjoin='Entity.id==Observation.dst_id',
             foreign_keys=dst_id)
     src_id: int = sa.Column(sa.Integer,
-            sa.ForeignKey('entity.id', ondelete='CASCADE'),
+            sa.ForeignKey('entity.id'),
             nullable=False)
     src = sa.orm.relationship('Entity',
             backref=sa.orm.backref('obs_as_src', lazy='dynamic'),
@@ -239,6 +269,46 @@ class Observation(Base, DataClassMixin):
             sa.Index('idx_observation_dst_by_timestamp', 'dst_id', 'time'),
             sa.Index('idx_observation_src_by_timestamp', 'src_id', 'time'),
     )
+    __mapper_args__ = {
+            'polymorphic_identity': SuperTypeEnum.observation,
+    }
+
+
+@dataclasses.dataclass
+class ComputedAttrs(AttrsBase, DataClassMixin):
+    '''A record which modified entities or observations from a previously
+    ingested batch.
+    '''
+    __tablename__ = 'computed_attrs'
+
+    id: int = sa.Column(sa.Integer, sa.ForeignKey('attrs_base.id'),
+            primary_key=True)
+
+    # The batch which created this ComputedAttrs
+    batch_id: int = sa.Column(sa.Integer,
+            sa.ForeignKey('batch.id', ondelete='CASCADE'),
+            nullable=False,
+            index=True)
+    batch = sa.orm.relationship('Batch', back_populates='computed_attrs')
+
+    obj_id: int = sa.Column(sa.Integer,
+            sa.ForeignKey('attrs_base.id'),
+            nullable=False,
+            index=True)
+    obj = sa.orm.relationship('AttrsBase',
+            backref=sa.orm.backref('computed_attrs', lazy='dynamic',
+                order_by='ComputedAttrs.id'),
+            primaryjoin='AttrsBase.id==ComputedAttrs.obj_id',
+            foreign_keys=[obj_id])
+
+    __table_args__ = (
+            #sa.Index('idx_computed_attrs_attrs', ...)
+    )
+    __mapper_args__ = {
+            'polymorphic_identity': SuperTypeEnum.computed_attrs,
+            'inherit_condition': id == AttrsBase.id,
+    }
+
 
 
 @dataclasses.dataclass
