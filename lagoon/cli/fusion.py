@@ -15,9 +15,20 @@ def check():
 
 
 @app.command()
+def recache():
+    """Only run the `FusedEntity` / `FusedObservation` re-computation part of
+    fusion.
+    """
+    import lagoon.fusion.fused_cache
+    lagoon.fusion.fused_cache.recache()
+
+
+@app.command()
 def run():
-    """Re-runs the entire entity fusion process.
+    """Re-runs the entire entity fusion process, including recache.
     """
     import lagoon.fusion
     lagoon.fusion.fusion_compute()
+    import lagoon.fusion.fused_cache
+    lagoon.fusion.fused_cache.recache()
 

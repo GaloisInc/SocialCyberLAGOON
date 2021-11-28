@@ -97,6 +97,8 @@ def load_git_repo(path: Path):
                 type=sch.ObservationTypeEnum.committed,
                 time=arrow.get(s.committed_date).datetime))
 
+        # TODO this could be sped up significantly by off-loading `s.stats.files`
+        # calls into a multiprocessing pool.
         for fpath, fstats in s.stats.files.items():
             db_f = db_get_file(fpath)
             db_f.obs_as_dst.append(sch.Observation(src=db_commit,

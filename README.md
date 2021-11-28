@@ -27,7 +27,10 @@ This method is preferred, as it saves a lot of time.
 3. Run `./lagoon_cli.py ingest git load <path/to/cpython>` to extract information from git into the LAGOON database. This took just under two hours on my laptop.
 4. Run `./lagoon_cli.py ingest ocean_pickle load ~/Downloads/python.pck` to extract information from OCEAN data.
 5. Run `./lagoon_cli.py ingest python_peps load` to extract information regarding Python PEPs into the LAGOON database.
-6. Run `./lagoon_cli.py fusion run` to fuse entities.
+6. Run `./lagoon_cli.py ingest toxicity_badwords compute` to compute bad-word-based toxicity on messages and git commits, and put that information in the LAGOON database.
+7. Run `./lagoon_cli.py fusion run` to fuse entities and re-compute caches.
+
+For development, after any change which affects attributes in the database, `./lagoon_cli.py fusion recache` must be run to re-cache the latest attribute set.
 
 # Documentation
 

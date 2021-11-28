@@ -1,5 +1,7 @@
 """Provides wrappers around :mod:`lagoon.db.schema` classes which give a
 read-only view of fused data.
+
+See `lagoon/fusion/fused_cache.py` for information on how these are generated.
 """
 
 from . import schema as sch
@@ -9,115 +11,57 @@ import datetime
 import sqlalchemy as sa
 from typing import Any, Dict
 
-###############################################################################
-# UGH awful hack to work with SqlAlchemy + Postgres' proprietary 'ORDER BY'
-# extension within jsonb_object_agg
-class _ArgumentOrderBy(sa.sql.functions.ColumnElement):
-    __visit_name__ = "argumentorderby"
-    _traverse_internals = [
-            ("element", sa.sql.functions.InternalTraversal.dp_clauseelement),
-            ("order_by", sa.sql.functions.InternalTraversal.dp_clauseelement),
-    ]
-    def __init__(self, element, *order_by):
-        super().__init__()
-        assert order_by, 'order_by is required'
-        self.element = element
-        self.order_by = sa.sql.functions.ClauseList(
-                *sa.util.to_list(order_by),
-                _literal_as_text_role=sa.sql.roles.ByOfRole)
-def _visit_argumentorderby(self, argument, **kwargs):
-    f1 = argument.element._compiler_dispatch(self, **kwargs)
-    f2 = argument.order_by._compiler_dispatch(self, **kwargs)
-    assert f1[-1] == ')', f'Must end in paren: {f1}'
-    return f'{f1[:-1]} ORDER BY {f2})'
-sa.sql.compiler.SQLCompiler.visit_argumentorderby = _visit_argumentorderby
-###############################################################################
+# union_all expensive in Postgres; do it as a lateral w/ match criteria
+# Note - this query ALWAYS returns at least 1 row for any AttrsBase-derived
+# class.
+def _attrs_sources_lateral_fn(ent_id_match):
+    CA = sa.orm.aliased(sch.ComputedAttrs)
+    AB = sa.orm.aliased(sch.AttrsBase)
+
+    return (
+            sa.select(CA.obj_id.label('ent_id'), CA.id)
+                .where(CA.obj_id == ent_id_match)
+            .union_all(
+                sa.select(AB.id.label('ent_id'), AB.id)
+                    .where(AB.id == ent_id_match)
+            )
+    ).lateral()
 
 
-# Limit to only those which are id_lowest, for safety
-_attrs_tv = sa.func.jsonb_each(sch.AttrsBase.attrs).table_valued('key', 'value').lateral()
-_attrs_decomposed = (
-        sa.select(sch.AttrsBase.id, _attrs_tv.c.key, _attrs_tv.c.value)
-        .select_from(sch.AttrsBase)
-        .join(_attrs_tv, sa.true())
-        ).subquery()
-_attrs_sources = (
-        sa.select(sch.ComputedAttrs.obj_id.label('ent_id'), sch.ComputedAttrs.id)
-        .union_all(sa.select(sch.AttrsBase.id.label('ent_id'), sch.AttrsBase.id))
-        ).subquery()
-_entity_computed_attrs = (
-        sa.select(
-            sch.EntityFusion.id_lowest.label('id'),
-            # Note use of a sort order here to guarantee stable results. Later
-            # batches will always have larger ComputedAttrs.id values due to
-            # incrementing PK.
-            (
-                # Can be null if empty object, so coalesce and strip_nulls outside
-                sa.func.jsonb_strip_nulls(
-                    _ArgumentOrderBy(
-                        sa.func.jsonb_object_agg(
-                            sa.func.coalesce(_attrs_decomposed.c.key, '<no attrs found>'),
-                            _attrs_decomposed.c.value),
-                    _attrs_decomposed.c.id.asc()))
-                .label('computed_attrs')),
-        )
-        .select_from(sch.EntityFusion)
-        .join(_attrs_sources, _attrs_sources.c.ent_id == sch.EntityFusion.id_other)
-        # SQLalchemy docs seem wrong -- need non-true join condition to suppress
-        # warning.
-        .join(_attrs_decomposed, _attrs_decomposed.c.id == _attrs_sources.c.id,
-            # Can be null -- empty object, for instance
-            isouter=True)
-        .group_by(sch.EntityFusion.id_lowest)
-        ).subquery()
-_entity_is_lowest = sa.select(sch.EntityFusion).where(
-        sch.EntityFusion.id_lowest == sch.Entity.id).exists()
-_entity_query = (
-        sa.select(
-            # Purposely omit fields like `batch_id` which do not apply to fused
-            # entity.
-            sch.Entity.id,
-            sch.Entity.name,
-            sch.Entity.type,
-            _entity_computed_attrs.c.computed_attrs.label('attrs'),
-        )
-        .where(_entity_is_lowest)
-        .join(_entity_computed_attrs, _entity_computed_attrs.c.id == sch.Entity.id)
-        ).subquery()
 @dataclasses.dataclass
 class FusedEntity(sch.Base, sch.DataClassMixin):
-    __table__ = _entity_query
+    __tablename__ = 'cache_fused_entity'
     __repr__ = sch.Entity.__repr__
 
-    id: int
-    name: str
-    type: sch.EntityTypeEnum
-    attrs: Dict[str, Any]
+    id: int = sa.Column(sa.Integer, primary_key=True)
+    name: str = sa.Column(sa.String, nullable=False)
+    type: sch.EntityTypeEnum = sa.Column(sch.DbEnum(sch.EntityTypeEnum),
+            nullable=False)
+    attrs: Dict[str, Any] = sa.Column(sch.DbJson(), nullable=False,
+            default=lambda: {})
 
     fusions = sa.orm.relationship('EntityFusion',
-            primaryjoin='EntityFusion.id_lowest == FusedEntity.id',
+            primaryjoin='foreign(EntityFusion.id_lowest) == FusedEntity.id',
             viewonly=True)
 
     @property
     def attrs_sources(self):
-        """Returns a Query object (can call .all() on it) which has, in order
-        of reverse importance, each object whose `attrs` field is merged into
-        this `FusedEntity`'s.
+        """Returns a list which has, in order of reverse importance, each object
+        whose `attrs` field is merged into this `FusedEntity`'s.
         """
         sess = sa.orm.object_session(self)
 
-        ids = (sa.select(sch.AttrsBase.id.label('ent_id'), sch.AttrsBase.id)
-                .union_all(
-                    sa.select(sch.ComputedAttrs.obj_id.label('ent_id'),
-                        sch.ComputedAttrs.id))).cte()
+        ids = _attrs_sources_lateral_fn(sch.EntityFusion.id_other)
+        res_type = sa.orm.with_polymorphic(sch.AttrsBase,
+                [sch.Entity, sch.ComputedAttrs])
         subq = (
-                sess.query(sa.orm.with_polymorphic(sch.AttrsBase,
-                    [sch.Entity, sch.ComputedAttrs]))
-                .join(ids, ids.c.id == sch.AttrsBase.id)
-                .join(sch.EntityFusion, sch.EntityFusion.id_other == ids.c.ent_id)
+                sess.query(res_type)
+                .select_from(sch.EntityFusion)
                 .where(sch.EntityFusion.id_lowest == self.id)
+                .join(ids, sa.true())
+                .join(res_type, res_type.id == ids.c.id)
                 )
-        return subq.order_by(sch.AttrsBase.id.asc())
+        return subq.order_by(sch.AttrsBase.id.asc()).all()
 
 
     def obs_hops(self, k, time_min=None, time_max=None):
@@ -154,58 +98,20 @@ class FusedEntity(sch.Base, sch.DataClassMixin):
         return obj_query.all()
 
 
-# Rewrite FusedObservation s.t. the dst_id and src_id fields are replaced
-# correctly with fused versions.
-_O = sch.Observation
-_F1 = sa.orm.aliased(sch.EntityFusion)
-_F2 = sa.orm.aliased(sch.EntityFusion)
-_obs_computed_attrs = (
-        sa.select(
-            _O.id,
-            # Note use of a sort order here to guarantee stable results. Later
-            # batches will always have larger ComputedAttrs.id values due to
-            # incrementing PK.
-            (
-                # Can be null if empty object, so coalesce and strip_nulls outside
-                sa.func.jsonb_strip_nulls(
-                    _ArgumentOrderBy(
-                        sa.func.jsonb_object_agg(
-                            sa.func.coalesce(_attrs_decomposed.c.key, '<no attrs found>'),
-                            _attrs_decomposed.c.value),
-                    _attrs_decomposed.c.id.asc()))
-                .label('computed_attrs')),
-        )
-        .select_from(_O)
-        .join(_attrs_sources, _attrs_sources.c.ent_id == _O.id)
-        # SQLalchemy docs seem wrong -- need non-true join condition to suppress
-        # warning.
-        .join(_attrs_decomposed, _attrs_decomposed.c.id == _attrs_sources.c.id,
-            # Can be null -- empty object, for instance
-            isouter=True)
-        .group_by(_O.id)
-        ).subquery()
-_obs_query = (
-        sa.select(_O.id, _O.batch_id, _O.type, _O.time,
-            _obs_computed_attrs.c.computed_attrs.label('attrs'),
-            _F1.id_lowest.label('src_id'), _F2.id_lowest.label('dst_id'))
-        .select_from(_O)
-        .join(_obs_computed_attrs, _obs_computed_attrs.c.id == _O.id)
-        .join(_F1, _O.src_id == _F1.id_other)
-        .join(_F2, _O.dst_id == _F2.id_other)
-        ).subquery()
 @dataclasses.dataclass
 class FusedObservation(sch.Base, sch.DataClassMixin):
-    __table__ = _obs_query
+    __tablename__ = 'cache_fused_observation'
     __repr__ = sch.Observation.__repr__
 
-    id: int
-    batch_id: int
-    type: sch.ObservationTypeEnum
-    time: datetime.datetime
-    attrs: Dict[str, Any]
-    dst_id: int
-    src_id: int
-
+    id: int = sa.Column(sa.Integer, primary_key=True)
+    batch_id: int = sa.Column(sa.Integer, nullable=False, index=True)
+    type: sch.ObservationTypeEnum = sa.Column(sch.DbEnum(sch.ObservationTypeEnum),
+            nullable=False)
+    time: datetime.datetime = sa.Column(sa.DateTime, nullable=False)
+    attrs: Dict[str, Any] = sa.Column(sch.DbJson(), nullable=False,
+            default=lambda: {})
+    dst_id: int = sa.Column(sa.Integer, sa.ForeignKey('cache_fused_entity.id'),
+            nullable=False)
     # https://docs.sqlalchemy.org/en/14/orm/query.html#sqlalchemy.orm.with_parent
     # Waiting on https://github.com/sqlalchemy/sqlalchemy/issues/6855
     # Usage:
@@ -214,31 +120,34 @@ class FusedObservation(sch.Base, sch.DataClassMixin):
     dst = sa.orm.relationship('FusedEntity',
             backref=sa.orm.backref('obs_as_dst', lazy='raise'),
             primaryjoin='foreign(FusedObservation.dst_id) == FusedEntity.id',
-            viewonly=True,
-            )
+            viewonly=True)
+    src_id: int = sa.Column(sa.Integer, sa.ForeignKey('cache_fused_entity.id'),
+            nullable=False)
     src = sa.orm.relationship('FusedEntity',
             backref=sa.orm.backref('obs_as_src', lazy='raise'),
             primaryjoin='foreign(FusedObservation.src_id) == FusedEntity.id',
-            viewonly=True,
-            )
+            viewonly=True)
+
+
+    __table_args__ = (
+            sa.Index('idx_fused_observation_dst_by_timestamp', 'dst_id', 'time'),
+            sa.Index('idx_fused_observation_src_by_timestamp', 'src_id', 'time'),
+    )
 
     @property
     def attrs_sources(self):
-        """Returns a Query object (can call .all() on it) which has, in order
-        of reverse importance, each object whose `attrs` field is merged into
-        this `FusedObservation`'s.
+        """Returns a list which has, in order of reverse importance, each object
+        whose `attrs` field is merged into this `FusedObservation`'s.
         """
         sess = sa.orm.object_session(self)
 
-        ids = (sa.select(sch.AttrsBase.id.label('ent_id'), sch.AttrsBase.id)
-                .union_all(
-                    sa.select(sch.ComputedAttrs.obj_id.label('ent_id'),
-                        sch.ComputedAttrs.id))).cte()
+        res_type = sa.orm.with_polymorphic(sch.AttrsBase,
+                [sch.Observation, sch.ComputedAttrs])
+        ids = _attrs_sources_lateral_fn(self.id)
         subq = (
-                sess.query(sa.orm.with_polymorphic(sch.AttrsBase,
-                    [sch.Observation, sch.ComputedAttrs]))
-                .join(ids, ids.c.id == sch.AttrsBase.id)
-                .where(ids.c.ent_id == self.id)
+                sess.query(res_type)
+                .select_from(ids)
+                .join(res_type, res_type.id == ids.c.id)
                 )
-        return subq.order_by(sch.AttrsBase.id.asc())
+        return subq.order_by(sch.AttrsBase.id.asc()).all()
 

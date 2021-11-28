@@ -1,6 +1,8 @@
 """Import data from Python Enhancement Proposals (PEPs).
 Data graph (entities are nodes, observations are labeled edges):
+
 .. mermaid::
+
     flowchart LR
     pep[pep<br/><div style='text-align:left'>+number<br/> \
         +url<br/> \
