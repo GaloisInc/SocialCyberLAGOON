@@ -64,14 +64,17 @@ class FusedEntity(sch.Base, sch.DataClassMixin):
         return subq.order_by(sch.AttrsBase.id.asc()).all()
 
 
-    def obs_hops(self, k, time_min=None, time_max=None):
+    def obs_hops(self, k, time_min=None, time_max=None, *,
+            sample_growth=0):
         """Returns an array of all observations (which include links to entities)
         within `k` hops of this entity. Optionally, those observations may be
         bounded by time range.
+
+        Args:
+            sample_growth (int): If non-zero, then each hop allows merging on
+                    a maximum of `sample_growth` new observations per entity.
         """
 
-        # Use -1 as it will not exist in the DB
-        q = sa.select(sa.literal(-1).label('id'), sa.literal(self.id).label('id_linked'))
         limit = []
         if time_min is not None:
             if isinstance(time_min, float):
@@ -81,21 +84,48 @@ class FusedEntity(sch.Base, sch.DataClassMixin):
             if isinstance(time_max, float):
                 time_max = datetime.datetime.fromtimestamp(time_max)
             limit.append(FusedObservation.time < time_max)
+
+        # Use -1 as it will not exist in the db
+        q = sa.select(sa.literal(-1).label('id'))
+        q_prev = sa.select(sa.literal(-1).label('id_linked'))
+        q_next = sa.select(sa.literal(self.id).label('id_linked'))
         for i in range(k):
-            q = sa.union(q,
-                    sa.select(FusedObservation.id, FusedObservation.src_id).where(
-                        FusedObservation.dst_id == q.c.id_linked, *limit)
+            q_new = (
+                    sa.select(q_next.c.id_linked, FusedObservation.id, FusedObservation.src_id)
+                    .where(FusedObservation.dst_id == q_next.c.id_linked, *limit)
                     .union(
-                        sa.select(FusedObservation.id, FusedObservation.dst_id).where(
-                            FusedObservation.src_id == q.c.id_linked, *limit))
-                    )
+                        sa.select(q_next.c.id_linked, FusedObservation.id, FusedObservation.dst_id)
+                        .where(FusedObservation.src_id == q_next.c.id_linked, *limit)))
+
+            if sample_growth:
+                # Limit by random sort
+                q_new = q_new.subquery()
+                q_new = sa.select(q_new, sa.func.row_number().over(
+                    partition_by=q_new.c.id_linked,
+                    order_by=sa.func.random()).label('row_number'))
+                q_new = sa.select(q_new.c.id, q_new.c.src_id).where(
+                        q_new.c.row_number <= sample_growth)
+                # Note -- cte() VERY important. Otherwise, the `row_number`
+                # by random clause gets executed multiple times, one for each
+                # hop.
+                q_new = q_new.cte()
+
+            # Add newfound edges
+            q = sa.union(q, sa.select(q_new.c.id))
+            # Mark entities explored
+            q_prev = sa.union_all(q_prev, sa.select(q_next.c.id_linked))
+            # Note entities which need to be explored in the next loop
+            q_next = sa.select(q_new.c.src_id.label('id_linked')).where(
+                    ~sa.exists().where(q_new.c.src_id == q_prev.c.id_linked))
+
         sess = sa.orm.object_session(self)
         obj_query = sess.query(FusedObservation).where(
                 FusedObservation.id == q.c.id)
         # Pull in the entities efficiently
         obj_query = obj_query.options(sa.orm.selectinload(FusedObservation.dst))
         obj_query = obj_query.options(sa.orm.selectinload(FusedObservation.src))
-        return obj_query.all()
+        r = obj_query.all()
+        return r
 
 
 @dataclasses.dataclass
