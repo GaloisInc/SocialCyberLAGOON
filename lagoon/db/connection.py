@@ -60,12 +60,14 @@ def get_session():
 
 
 _engineaio = None
-_lockaio = asyncio.Lock()
+_lockaio = None
 _sessionmakeraio = None
 async def get_engine_async():
     """Returns an asynchronous engine.
     """
-    global _engineaio, _sessionmakeraio
+    global _engineaio, _lockaio, _sessionmakeraio
+    if _lockaio is None:
+        _lockaio = asyncio.Lock()
     async with _lockaio:
         if _engineaio is None:
             cfg = get_config()
