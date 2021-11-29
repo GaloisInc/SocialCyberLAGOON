@@ -70,6 +70,16 @@ class DbEncoder:
             d = dataclasses.asdict(o)
         except:
             raise ValueError(type(o))
+
+        # For UI, add extra properties
+        if isinstance(o, sch.FusedEntity):
+            # computed_badwords_*
+            bw = 0
+            for k, v in d['attrs'].items():
+                if k.startswith('computed_badwords_'):
+                    bw += v
+            d['ui_computed_badwords'] = bw
+
         if isinstance(o, (sch.Entity, sch.Observation, sch.FusedEntity,
                 sch.FusedObservation)):
             d['type'] = d['type'].value

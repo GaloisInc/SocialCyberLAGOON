@@ -6,25 +6,25 @@ div.temporalview
   //- Width not working? See CSS
   v-dialog(v-model="focusDetails" persistent)
     v-card(style="display: flex; flex-direction: column; max-height: inherit")
-      v-card-title {{cy.$id(focusId).data('repr')}}
+      v-card-title {{cy.$id(focusDetailsId).data('repr')}}
       v-card-text(style="flex-grow: 1; flex-shrink: 1; overflow-y: auto")
         table.attrs(:refresh="cyUpdateNumber")
-          tr(v-for="[k, v] of Object.entries(cy.$id(focusId).data('attrs') || {})")
+          tr(v-for="[k, v] of Object.entries(cy.$id(focusDetailsId).data('attrs') || {})")
             td.key {{k}}
             td.value(v-if="typeof v === 'object' && v && v.$plugin !== undefined")
-              v-btn(@click="pluginDetails(cy.$id(focusId), k, v.$plugin)") Run plugin
+              v-btn(@click="pluginDetails(cy.$id(focusDetailsId), k, v.$plugin)") Run plugin
             td.value(v-else-if="typeof v === 'object' && v && v.$html"
                 v-html="v.$html")
             td.value(v-else) {{v}}
-          tr(v-for="obj of cy.$id(focusId).connectedEdges().toArray()")
+          tr(v-for="obj of cy.$id(focusDetailsId).connectedEdges().toArray()")
             td.key
               //- Two equal for str compare
-              span(v-if="obj.data('source') == focusId") obs_as_src
+              span(v-if="obj.data('source') == focusDetailsId") obs_as_src
               span(v-else) obs_as_dst
             td.value
               span {{obj.data('repr')}}
           //- Entity shows fusions
-          tr(v-if="!cy.$id(focusId).data('target')" v-for="fuse of cy.$id(focusId).data('fusions')")
+          tr(v-if="!cy.$id(focusDetailsId).data('target')" v-for="fuse of cy.$id(focusDetailsId).data('fusions')")
             td.key fusion
             td.value {{fuse.id_other}} {{fuse.comment}}
       v-card-actions
@@ -45,9 +45,17 @@ div.temporalview
     div(style="display: flex; flex-direction: row; align-items: center; justify-items: center;")
       //- Fix width/height so loading/not doesn't cause UI jitter
       div(style="padding: 0 1em; width: 3.5em; height: 2em")
+        v-btn(icon v-on="on"
+            variant="outlined" size="x-small"
+            title="When locked, clicking objects shows details instead of changing focus."
+            @click="cyFocusLocked=!cyFocusLocked")
+          v-icon(v-if="cyFocusLocked") mdi-lock
+          v-icon(v-else) mdi-lock-open-outline
+      div(style="padding: 0 1em; width: 3.5em; height: 2em")
         span(v-if="loadSetCurrent !== loadSetComplete")
           v-icon.blink mdi-clock
         v-btn(v-else icon variant="outlined" size="x-small"
+            title="Pause/resume graph layout"
             @click="cyIsRunning=!cyIsRunning")
           v-icon(v-if="cyIsRunning") mdi-pause
           v-icon(v-else) mdi-play
@@ -176,6 +184,7 @@ export default defineComponent({
         format: 'hex',
         alpha: 1,
       }),
+      cyFocusLocked: false,
       cyIsRunning: true,
       cyIsRunningLayout: null as any,
       cyTooltips: new Map<any, any>(),
@@ -183,6 +192,7 @@ export default defineComponent({
       cyUpdateNumber: 0, // Hack for pan to update tooltips
       dayjs,
       focusDetails: false,
+      focusDetailsId: 0,
       loadSetCurrent: 0,
       loadSetComplete: 0,
       mountedFlag: false,
@@ -398,6 +408,16 @@ export default defineComponent({
         },
 
         {
+          // '?' here means truthy, e.g., non-zero and exists
+          selector: 'node[?ui_computed_badwords]',
+          style: {
+            'border-color': '#f00',
+            'border-width': 4,
+            'border-style': 'solid',
+          },
+        },
+
+        {
           selector: 'edge',
           style: {
             'width': 3,
@@ -437,8 +457,13 @@ export default defineComponent({
       const id = e.target.id();
       if (this.cyIsEntity(id)) {
         const eId = +id;
-        if (this.focusId === eId) {
+        if (this.cyFocusLocked) {
           this.focusDetails = true;
+          this.focusDetailsId = eId;
+        }
+        else if (this.focusId === eId) {
+          this.focusDetails = true;
+          this.focusDetailsId = eId;
         }
         else {
           this.$emit('update:focusId', eId);
