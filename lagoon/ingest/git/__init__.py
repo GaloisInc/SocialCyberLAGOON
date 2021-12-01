@@ -38,10 +38,7 @@ def load_git_repo(path: Path):
         r = entities['commit'].get(id)
         if r is None:
             r = entities['commit'][id] = sch.Entity(name=id,
-                type=sch.EntityTypeEnum.git_commit,
-                attrs={
-                    'message': s.message,
-                })
+                type=sch.EntityTypeEnum.git_commit)
         return r
     def db_get_file(o):
         id = o
