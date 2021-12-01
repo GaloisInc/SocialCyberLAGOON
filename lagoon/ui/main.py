@@ -74,11 +74,13 @@ class DbEncoder:
         # For UI, add extra properties
         if isinstance(o, sch.FusedEntity):
             # computed_badwords_*
-            bw = 0
+            bw = {'body': 0, 'quote': 0, 'sign': 0}
             for k, v in d['attrs'].items():
                 if k.startswith('computed_badwords_'):
-                    bw += v
-            d['ui_computed_badwords'] = bw
+                    bwk = k.split('_')[2]
+                    bw[bwk] += v
+            for k, v in bw.items():
+                d[f'ui_computed_badwords_{k}'] = v
 
         if isinstance(o, (sch.Entity, sch.Observation, sch.FusedEntity,
                 sch.FusedObservation)):

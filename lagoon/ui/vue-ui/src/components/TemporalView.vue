@@ -45,7 +45,7 @@ div.temporalview
     div(style="display: flex; flex-direction: row; align-items: center; justify-items: center;")
       //- Fix width/height so loading/not doesn't cause UI jitter
       div(style="padding: 0 1em; width: 3.5em; height: 2em")
-        v-btn(icon v-on="on"
+        v-btn(icon
             variant="outlined" size="x-small"
             title="When locked, clicking objects shows details instead of changing focus."
             @click="cyFocusLocked=!cyFocusLocked")
@@ -409,7 +409,17 @@ export default defineComponent({
 
         {
           // '?' here means truthy, e.g., non-zero and exists
-          selector: 'node[?ui_computed_badwords]',
+          selector: 'node[?ui_computed_badwords_quote]',
+          style: {
+            'border-color': '#f80',
+            'border-width': 4,
+            'border-style': 'solid',
+          },
+        },
+
+        {
+          // Last match wins -- body should take precedence
+          selector: 'node[?ui_computed_badwords_body]',
           style: {
             'border-color': '#f00',
             'border-width': 4,
