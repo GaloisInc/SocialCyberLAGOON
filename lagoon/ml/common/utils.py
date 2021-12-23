@@ -2,6 +2,7 @@ import arrow
 import os
 import shortuuid
 import random
+import re
 from typing import List, Union
 
 import numpy as np
@@ -61,13 +62,58 @@ def plot_stats(stats, foldername, naive_val_loss=None):
     plt.savefig(os.path.join(foldername, f'{uuid}.png'), dpi=300, bbox_inches='tight', pad_inches=0.1)
 
 
+def count_words(inp: str) -> int:
+    """
+    Count the number of words in a string
+        Example input: 'Guido van Rossum writes:\n > > What is the status of PEP 209?  I see'
+        Method 1: len(re.findall(r'\w+', inp)) = 13 (Correct, takes into account '209')
+        Method 2: sum([i.strip(string.punctuation).isalpha() for i in inp.split()]) = 12 (Incorrect, ignores '209')
+        Method 3: len(inp.split()) = 15 (Incorrect, considers '>' and '>' as words)
+    """
+    return len(re.findall(r'\w+', inp))
+
+
+########################################################################
+# Monthly activity
+########################################################################
+
+def get_year_month_list(start: str, end: str):
+    """
+    Return a list of years and months in the time span from first to last
+    first and last must be datetime objects
+    Eg:
+        start = '2020-09-11' and end = '2021-01-05', then return ['2020-9','2020-10','2020-11','2020-12','2021-1']
+    """
+    cols = []
+    start, end = arrow.get(start).datetime, arrow.get(end).datetime
+    for year in range(start.year,end.year+1):
+        start_month = start.month if year==start.year else 1
+        end_month = end.month if year==end.year else 12
+        for month in range(start_month,end_month+1):
+            cols.append(f'{year}-{month}')
+    return cols
+
+
+def get_entity_activity_monthly(entity: sch.FusedEntity, start: str = '1990-08-09', end: str = '2021-06-28'):
+    """
+    For a given `entity`, get the activity (i.e. observations) on a monthly basis starting from `start` to `end`
+    Defaults are set to timeframe of cpython in DB
+    """
+    stats = {k:0 for k in get_year_month_list(start,end)}
+    obs = entity.obs_hops(1)
+    for ob in obs:
+        t = ob.time
+        stats[f'{t.year}-{t.month}'] = stats.get(f'{t.year}-{t.month}',0) + 1
+    return stats
+
+
 ########################################################################
 # Database interaction utils
 ########################################################################
 
 def get_entity_ids_from_obs(obs: Union[List, sa.orm.query.Query]) -> List[int]:
     """
-    Given a list or query of observations `obs`, get all entity IDs which are connected to those observations
+    Given a list or query of FusedObservations `obs`, get all entity IDs which are connected to those observations
     Entity_ids are deduplicated and returned as a list
     """
     entity_ids = set()
@@ -131,6 +177,27 @@ def get_entities_in_window(start: str, end: str, method: int = 1) -> List[int]:
         with get_session() as sess:
             entity_ids = sess.query(sch.FusedEntity.id).where(sa.select(sch.FusedObservation).where(sch.FusedEntity.id.in_([sch.FusedObservation.src_id, sch.FusedObservation.dst_id])).where(sa.and_(sch.FusedObservation.time >= arrow.get(start).datetime, sch.FusedObservation.time <= arrow.get(end).datetime)).exists())
         return entity_ids.all()
+
+
+def get_pep_authors(pep: sch.FusedEntity) -> List[str]:
+    """
+    Given a PEP entity from the DB, return the names of its authors as a list
+    """
+    authors = []
+    for ob in pep.obs_hops(1):
+        if ob.type == sch.ObservationTypeEnum.created and ob.src.type == sch.EntityTypeEnum.person:
+            authors.append(ob.src.attrs['name'])
+    return authors
+
+def get_author_peps(author: sch.FusedEntity) -> List[int]:
+    """
+    Given an author entity from the DB, return the numbers of the PEPs authored by him/her as a list
+    """
+    peps = []
+    for ob in author.obs_hops(1):
+        if ob.type == sch.ObservationTypeEnum.created and ob.dst.type == sch.EntityTypeEnum.pep:
+            peps.append(ob.dst.attrs['number'])
+    return peps
 
 
 ########################################################################

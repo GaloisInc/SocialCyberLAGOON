@@ -23,3 +23,9 @@ LOSSFUNC_MAPPING = {
 }
 
 TOXICITY_CATEGORIES = [f'computed_badwords_{category}' for category in ['googleInstantB_any', 'swearing_any', 'mrezvan94Harassment_Appearance', 'mrezvan94Harassment_Generic', 'mrezvan94Harassment_Intelligence', 'mrezvan94Harassment_Politics', 'mrezvan94Harassment_Racial', 'mrezvan94Harassment_Sexual']]
+
+PEP_STATUSES = {
+    'good': ['active', 'accepted', 'final', 'superseded'],
+    'bad': ['withdrawn', 'rejected', 'deferred', 'april fool!'], # 'april fool!' was actually a rejected PEP
+    'other': ['draft', 'provisional'] # 'draft' and 'provisional' PEPs can go both ways, hence are classified as 'other'
+}
