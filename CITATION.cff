@@ -1,10 +1,8 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 authors:
-- family-names: "Inc"
-  given-names: "Galois"
-- family-names: "Vermont"
-  given-names: "University of"
+- family-names: "Galois Inc"
+- family-names: "University of Vermont"
 title: "SocialCyberLAGOON"
 doi: 10.5281/zenodo.5866494
 date-released: 2022-01-17
