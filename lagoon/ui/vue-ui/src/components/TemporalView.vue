@@ -618,7 +618,7 @@ export default defineComponent({
       const [before, after] = await this.$vuespa.call('entity_obs_adjacent',
           focusId, ts, te);
       if (before !== null) {
-        let repr = `Next earliest event: ${this.dbTimeToDisplay(before.time)}`;
+        let repr = `Previous event: ${this.dbTimeToDisplay(before.time)}`;
         this.cy.add([
             {data: {id: 'time-eventBefore',
               repr: repr,
@@ -630,7 +630,7 @@ export default defineComponent({
         ]);
       }
       if (after !== null) {
-        let repr = `Next latest event: ${this.dbTimeToDisplay(after.time)}`;
+        let repr = `Next event: ${this.dbTimeToDisplay(after.time)}`;
         this.cy.add([
             {data: {id: 'time-eventAfter',
               repr: repr,
