@@ -127,12 +127,17 @@ class AttrsBase(Base, DataClassMixin):
     # Miscellaneous attributes describing this type (e.g., for a user, e-mail,
     # twitter handle, etc; for an observation, the number of lines removed from
     # a file by a git commit, etc)
-    attrs: Dict[str, Any] = sa.Column(DbJson(), nullable=False,
-            default=lambda: {})
+    attrs: Dict[str, Any] = sa.Column(DbJson(), nullable=False)
 
     __mapper_args__ = {
             'polymorphic_on': 'super_type',
     }
+
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.attrs is None:
+            self.attrs = {}
 
 
 
