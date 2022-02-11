@@ -96,6 +96,9 @@ class DbEncoder:
 
         if isinstance(o, sch.FusedEntity) and 'fusions' in o.__dict__:
             d['fusions'] = [DbEncoder.encode(f) for f in o.fusions]
+            for ff, f in zip(d['fusions'], o.fusions):
+                if hasattr(f, 'ui_batch_other'):
+                    ff['ui_batch_other'] = DbEncoder.encode(f.ui_batch_other)
 
         d = {k:
                 arrow.get(v).timestamp() if isinstance(v, datetime.datetime)
@@ -122,6 +125,16 @@ class Client(vuespa.Client):
                 o = q.scalar()
                 # Load fusions
                 o.fusions
+                # Stock batch information from fusions
+                qq = (
+                        session.query(sch.Entity.id, sch.Batch)
+                        .select_from(sch.Entity)
+                        .where(sch.Entity.id.in_([f.id_other for f in o.fusions]))
+                        .join(sch.Batch, sch.Entity.batch)
+                        ).all()
+                qq = {k: v for k, v in qq}
+                for f in o.fusions:
+                    f.ui_batch_other = qq[f.id_other]
                 return o
             r = await sess.run_sync(o_sync)
             return DbEncoder.encode(r)

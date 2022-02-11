@@ -26,7 +26,7 @@ div.temporalview
           //- Entity shows fusions
           tr(v-if="!cy.$id(focusDetailsId).data('target')" v-for="fuse of cy.$id(focusDetailsId).data('fusions')")
             td.key fusion
-            td.value {{fuse.id_other}} {{fuse.comment}}
+            td.value {{fuse.id_other}} {{fuse.comment}} [{{fuse.ui_batch_other.id}} {{fuse.ui_batch_other.resource}}]
       v-card-actions
         v-btn(color="primary" @click="focusDetails = false") Close
 
