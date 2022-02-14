@@ -76,7 +76,7 @@ def _copy_table_from_model(model, multi_session):
 
 
 @contextlib.contextmanager
-def multi_session_dropper(sess_factory, table):
+def multi_session_dropper(sess_factory, table, *, keep=False):
     """Given some `table` from :meth:`temp_table_from_model` with
     ``multi_session=True``, produces a context manager that, on exit, uses
     `sess_factory` to destroy the table.
@@ -86,8 +86,9 @@ def multi_session_dropper(sess_factory, table):
     try:
         yield
     finally:
-        with sess_factory() as sess:
-            sess.execute(sa.text(f'''DROP TABLE "{table_name}"'''))
+        if not keep:
+            with sess_factory() as sess:
+                sess.execute(sa.text(f'''DROP TABLE "{table_name}"'''))
         _multi_session_tables.pop(table_name, None)
 
 

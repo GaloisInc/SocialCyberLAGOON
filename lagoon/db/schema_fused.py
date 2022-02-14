@@ -40,9 +40,18 @@ class FusedEntity(sch.Base, sch.DataClassMixin):
     attrs: Dict[str, Any] = sa.Column(sch.DbJson(), nullable=False,
             default=lambda: {})
 
+    cached_names: str = sa.Column(sa.String, nullable=True)
+
     fusions = sa.orm.relationship('EntityFusion',
             primaryjoin='foreign(EntityFusion.id_lowest) == FusedEntity.id',
             viewonly=True)
+
+    __table_args__ = (
+            sa.Index('idx_cache_fused_entity_cached_names',
+                'cached_names',
+                postgresql_using='gin',
+                postgresql_ops={'cached_names': 'gin_trgm_ops'}),
+    )
 
     @property
     def attrs_sources(self):

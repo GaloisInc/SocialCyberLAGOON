@@ -27,6 +27,18 @@ target_metadata = mapper_registry.metadata
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
 
+def compare_type(context, col_real, col_spec, type_real, type_spec, *args, **kwargs):
+    '''Return False if same, True if changed, None for default check.'''
+    import sqlalchemy as sa
+    if isinstance(type_spec, sa.Enum) and isinstance(type_real, sa.VARCHAR):
+        if max([len(e) for e in type_spec.enums]) > type_real.length:
+            # Changed, need to re-compute
+            return True
+        # The new values will fit in the old column, so don't change it by
+        # default
+        return False
+    return None
+
 
 def run_migrations_offline():
     """Run migrations in 'offline' mode.
@@ -44,6 +56,7 @@ def run_migrations_offline():
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        compare_type=compare_type,
     )
 
     with context.begin_transaction():
@@ -61,7 +74,8 @@ def run_migrations_online():
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, target_metadata=target_metadata,
+            compare_type=compare_type,
         )
 
         with context.begin_transaction():

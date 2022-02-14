@@ -195,16 +195,86 @@ class Client(vuespa.Client):
             before, after = await sess.run_sync(o_sync)
             return [DbEncoder.encode(o) for o in [before, after]]
     async def api_entity_search(self, s):
-        """Find entities with name like s (replaces * with % for db)"""
+        """Find entities with name matching the regex s"""
         async with lagoon.db.connection.get_session_async() as sess:
             limit = 10
+            # `cached_names` is newline-separated.... so replace the
+            # anchor appropriately.
+            import sre_parse
+
+            s_orig = s
+            s_p = sre_parse.parse(s)
+            def unparse_and_fix(ss):
+                r = []
+                for k, v in ss:
+                    if k == sre_parse.ANY:
+                        if v is not None:
+                            raise NotImplementedError(f'Value {repr(v)}')
+                        # Replicating 'm' flag
+                        r.append(r'[^\\n]')
+                    elif k == sre_parse.LITERAL:
+                        v = chr(v)
+                        if v in '\\.^$()[]{}?*+|/-':
+                            r.append('\\')
+                        r.append(v)
+                    elif k == sre_parse.MAX_REPEAT:
+                        r.append('(')
+                        r.append(unparse_and_fix(v[2]))
+                        r.append(')')
+
+                        if v[0] == 0:
+                            if v[1] == 1:
+                                r.append('?')
+                            elif v[1] == sre_parse.MAXREPEAT:
+                                r.append('*')
+                            else:
+                                raise NotImplementedError(f"Max repeat count: {v[1]}")
+                        elif v[0] == 1:
+                            if v[1] != sre_parse.MAXREPEAT:
+                                raise NotImplementedError("Max repeat count")
+                            r.append('+')
+                        else:
+                            raise NotImplementedError(v[0])
+                    elif k == sre_parse.AT:
+                        subs = {
+                                # The one thing to change
+                                sre_parse.AT_BEGINNING: '(^|\n)',
+                                sre_parse.AT_END: '$',
+                        }
+                        v_r = subs.get(v)
+                        if v_r is None:
+                            raise NotImplementedError(v)
+                        r.append(v_r)
+                    elif k == sre_parse.SUBPATTERN:
+                        r.append('(')
+                        r.append(unparse_and_fix(v[3]))
+                        r.append(')')
+                    elif k == sre_parse.BRANCH:
+                        if v[0] is not None:
+                            raise NotImplementedError(v)
+                        r.append('(?:')
+                        for vv_i, vv in enumerate(v[1]):
+                            if vv_i != 0:
+                                r.append('|')
+                            r.append(unparse_and_fix(vv))
+                        r.append(')')
+                    else:
+                        raise NotImplementedError(k)
+                return ''.join(r)
+            try:
+                s = unparse_and_fix(s_p)
+            except NotImplementedError as e:
+                return [
+                        {'value': None, 'label': f'Regex: {repr(s)}'},
+                        {'value': None, 'label': f'Not implemented: {e}'}]
+
             q = await sess.execute(sa.select(sch.FusedEntity).filter(
                     # ~* is case-insensitive posix regex in postgres
-                    sch.FusedEntity.name.op('~*')(s)).limit(limit))
+                    sch.FusedEntity.cached_names.op('~*')(s)).limit(limit))
             q = [qq[0] for qq in q.all()]
 
             # See if there's an integer to search for in there
-            ss = s
+            ss = s_orig
             if ss.startswith('^'):
                 ss = ss[1:]
             if ss.endswith('.*'):

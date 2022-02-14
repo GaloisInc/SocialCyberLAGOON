@@ -6,6 +6,7 @@ import lagoon.db.schema as sch
 import lagoon.db.schema_fused as schf
 
 import sqlalchemy as sa
+import tqdm
 
 ###############################################################################
 # UGH awful hack to work with SqlAlchemy + Postgres' proprietary 'ORDER BY'
@@ -142,4 +143,19 @@ def recache():
         sess.execute(sa.insert(sch.FusedObservation).from_select(
                 ['id', 'batch_id', 'type', 'time', 'attrs', 'src_id', 'dst_id'],
                 _obs_query))
+
+        sess.flush()
+
+        # Assign names
+        print(f'...Caching all names for each entity...')
+        (sess.query(sch.FusedEntity)
+                .update({sch.FusedEntity.cached_names:
+                    sa.select(sa.func.string_agg(
+                        sch.Entity.name.distinct(),
+                        '\n'))
+                    .select_from(sch.EntityFusion)
+                    .where(sch.EntityFusion.id_lowest == sch.FusedEntity.id)
+                    .join(sch.Entity, sch.Entity.id == sch.EntityFusion.id_other)
+                    .scalar_subquery()
+                }))
 

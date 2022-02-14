@@ -121,7 +121,7 @@ export default defineComponent({
         this.resultsLoading = true;
         try {
           this.results = await this.$vuespa.call(this.endpointData,
-              '^' + this.searchQuery + '.*');
+              '^' + this.searchQuery);
           console.log(`Search returned ${this.results.length} results`);
         }
         finally {

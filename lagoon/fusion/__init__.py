@@ -25,8 +25,8 @@ class EntitySearch(Base):
 
     __table_args__ = (
         sa.Index('idx_entitysearch_zz', 'name_idx',
-            postgresql_ops={'name_idx': 'gin_trgm_ops'},
-            postgresql_using='gin'),
+            postgresql_ops={'name_idx': 'gist_trgm_ops'},
+            postgresql_using='gist'),
     )
 
 
@@ -44,7 +44,7 @@ def _fusion_compute(p):
         # metaphone() by default ignores spaces, so use array magic to count
         # them.
         sess.execute(sa.text(r'''
-                create or replace function fusion_name_munge(text) 
+                create or replace function fusion_name_munge(text)
                     returns text as $$
                 select
                     array_to_string(array_agg(metaphone(part, 20)), ' ')
@@ -53,10 +53,12 @@ def _fusion_compute(p):
 
         ETable = temp_table_from_model(sess, EntitySearch, multi_session=True)
 
-    with multi_session_dropper(get_session, ETable):
+    with multi_session_dropper(get_session, ETable, keep=False):
         with get_session() as sess:
+            print(f'Gather data on community members')
             sess.execute(sa.insert(ETable).from_select(['id', 'name', 'email'],
                     sa.select(sch.Entity.id,
+                        # NOTE -- may be NULL!
                         sa.func.lower(sch.Entity.attrs['name'].astext),
                         sa.func.lower(sch.Entity.attrs['email'].astext))
                     .where(
@@ -66,16 +68,32 @@ def _fusion_compute(p):
             all_obj_ids = [o[0] for o in sess.execute(sa.select(ETable.id))]
 
             # Purge previous fusion results
+            print(f'Purging previous fusion')
             sess.execute(sa.delete(sch.EntityFusion))
 
-            # Anything that's not a person is exempt from fusion
+            # Fuse commits
+            print(f'Fusing commits')
+            cte = (sess.query(sch.Entity.attrs['commit_sha'].astext.label('sha'), sa.func.min(sch.Entity.id).label('id'))
+                    .where(sch.Entity.type == 'git_commit')
+                    .group_by(sch.Entity.attrs['commit_sha'].astext)).cte()
             sess.execute(sa.insert(sch.EntityFusion).from_select(['id_lowest', 'id_other'],
-                    sa.select(sch.Entity.id, sch.Entity.id.label('id2'))
-                    .where(sch.Entity.id.not_in(sa.select(ETable.id)))
-                    ))
+                    sa.select(cte.c.id, sch.Entity.id)
+                    .select_from(cte)
+                    .join(sch.Entity, sch.Entity.attrs['commit_sha'].astext == cte.c.sha)))
 
         # Merge every entity
-        list(tqdm.tqdm(p.imap(_fuse_entity, all_obj_ids), total=len(all_obj_ids)))
+        list(tqdm.tqdm(p.imap(_fuse_entity, all_obj_ids), total=len(all_obj_ids),
+                desc='Fusing people'))
+
+        with get_session() as sess:
+            # Anything that's not a person and not yet merged is exempt from
+            # fusion
+            print(f'Fusing everything else')
+            sess.execute(sa.insert(sch.EntityFusion).from_select(['id_lowest', 'id_other'],
+                    sa.select(sch.Entity.id, sch.Entity.id.label('id2'))
+                    .where(
+                        ~sa.select(sch.EntityFusion).where(sch.EntityFusion.id_other == sch.Entity.id).exists()
+                    )))
 
 
 def _fuse_entity(entity_id):
@@ -173,28 +191,36 @@ def _fuse_entity(entity_id):
                         and re.search(r'^.*@.*(?<!example)\..*$', obj.email) is not None):
                     same = sess.execute(sa.select(ET).where(
                             (ET.email == obj.email)
-                            & (ET.id != obj.id)
+                            & (ET.id < obj.id)
                             ).order_by(ET.id).limit(1)).scalar()
                     if same is not None:
                         add_to_group(obj.id, same.id, f'email match: {obj.email}')
 
                 # Same name? Don't allow for short names
-                if ' ' in obj.name and len(obj.name) > 5:
+                if obj.name and ' ' in obj.name and len(obj.name) > 5:
                     same = sess.execute(sa.select(ET).where(
                             (ET.name == obj.name)
-                            & (ET.id != obj.id)
+                            & (ET.id < obj.id)
                             ).order_by(ET.id).limit(1)).scalar()
                     if same is not None:
                         add_to_group(obj.id, same.id, f'name match: {obj.name}')
 
-                    sim = sa.func.similarity(ET.name_idx, obj.name_idx)
-                    same = sess.execute(sa.select(ET, ET.name, ET.name_idx, sim).where(
-                            (ET.id != obj.id)
-                            & (sim > 0.95))
-                            .order_by(ET.id).limit(1)).one_or_none()
+                    # Implementation note: postgres only uses the similarity
+                    # index correctly when using an ORDER BY clause with no
+                    # WHERE clause, where the ORDER BY uses similarity directly
+                    # in no arithmetic.
+                    sim_dist = ET.name_idx.op('<->')(obj.name_idx)
+                    sim_inner = (
+                            sa.select(ET.id, ET.name, ET.name_idx,
+                                sim_dist.label('sim_dist'))
+                            .where(ET.id != obj.id)
+                            .where(ET.name_idx.isnot(None))
+                            .order_by(sim_dist).limit(1)).subquery()
+                    same = sess.execute(sa.select(sim_inner)
+                            .where(sim_inner.c.sim_dist < 0.05)).one_or_none()
                     if same is not None:
-                        add_to_group(obj.id, same[0].id,
-                                f'names similar: {same[3]:.4f} '
+                        add_to_group(obj.id, same[0],
+                                f'names similar: {1 - same[3]:.4f} '
                                 f'for {same[1]} ({same[2]}) vs {obj.name} ({obj.name_idx})')
 
                 if not added_to_group:
@@ -205,4 +231,6 @@ def _fuse_entity(entity_id):
         except sa.exc.IntegrityError:
             # Try again -- lock free, basically
             time.sleep(random.random())
+        except:
+            raise ValueError(f'While processing {entity_id}')
 
