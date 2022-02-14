@@ -15,7 +15,7 @@ _multi_session_tables = {}
 
 def _copy_table_args(model, **kwargs):
     """Try to copy existing __table_args__, override params with kwargs"""
-    table_args = model.__table_args__
+    table_args = getattr(model, '__table_args__', ())
 
     if isinstance(table_args, tuple):
         new_args = []
@@ -110,17 +110,36 @@ def temp_table_from_model(sess, model, *, multi_session=False):
     SQLAlchemy definition. Supports indices.
 
     Args:
+        sess: Active session, only used for table creation.
+        model: Model to be created; should derive from `sa.orm.declarative_base`
         multi_session: If ``True``, do NOT use a temporary table, but DO delete
                 any existing versin of this table and create a new one.
+
+                If ``'streamlit'``, then only create the table if it does not
+                exist. Otherwise, assume the user has a `multi_session_dropper`
+                block which can clean up extra rows as part of the page that
+                makes the temporary table.
     """
+    assert multi_session in [False, True, 'streamlit'], multi_session
+
     if multi_session:
         table_name = _multi_session_table_name(model)
-        sess.execute(sa.text(f'''DROP TABLE IF EXISTS "{table_name}"'''))
+        if multi_session == 'streamlit':
+            copy_model = _multi_session_tables.get(table_name)
+            if copy_model:
+                return copy_model
+        else:
+            sess.execute(sa.text(f'''DROP TABLE IF EXISTS "{table_name}"'''))
     copy_model = _copy_table_from_model(model, multi_session)
 
     # Actually create the table
-    #print(str(CreateTable(copy_model.__table__)))
-    copy_model.__table__.create(sess.connection())
+    try:
+        #print(str(CreateTable(copy_model.__table__)))
+        copy_model.__table__.create(sess.connection())
+    except sa.exc.ProgrammingError as e:
+        if ('psycopg2.errors.DuplicateTable' not in str(e)
+                or multi_session != 'streamlit'):
+            raise
 
     return copy_model
 

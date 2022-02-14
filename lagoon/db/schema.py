@@ -87,11 +87,13 @@ class EntityTypeEnum(enum.Enum):
     '''An enum of entity types. Standardized across all ingestions for
     consistency.
     '''
-    git_commit = 'git_commit'
     file = 'file'
+    git_commit = 'git_commit'
+    github_review = 'github_review'
+    github_pullrequest = 'github_pullrequest'
     message = 'message'
-    person = 'person'
     pep = 'pep'
+    person = 'person'
 
 
 class ObservationTypeEnum(enum.Enum):
@@ -100,6 +102,7 @@ class ObservationTypeEnum(enum.Enum):
     attached_to = 'attached_to'
     committed = 'committed'
     created = 'created'
+    merged_as = 'merged_as'
     message_cc = 'message_cc'
     message_from = 'message_from'
     message_ref = 'message_ref'

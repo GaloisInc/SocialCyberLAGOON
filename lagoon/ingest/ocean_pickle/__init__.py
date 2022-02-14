@@ -16,7 +16,7 @@ Data graph (entities are nodes, observations are labeled edges):
 
 from lagoon.db.connection import get_session
 import lagoon.db.schema as sch
-from lagoon.ingest.util import clean_for_ingest
+from lagoon.ingest.util import clean_for_ingest, date_field_resolve
 
 import arrow
 import collections
@@ -106,7 +106,7 @@ def load_pickle(path: Path):
             cc = user_resolve('cc')
 
             try:
-                message_time = _date_field_resolve(m['date'], m['raw_date_string'])
+                message_time = date_field_resolve(m['date'], m['raw_date_string'])
             except:
                 raise ValueError(f"Bad date: {m['message_id']} {m['date']} {m['raw_date_string']}")
 
@@ -147,23 +147,4 @@ def load_pickle(path: Path):
                 flush_count[0] = 0
 
         print(f'Finished with batch {batch.id}; committing')
-
-
-def _date_field_resolve(*dates):
-    """Try to resolve each value in `dates`, in order. Return the first one that
-    resolves correctly.
-    """
-    for fmt_field in dates:
-        for fmt in [None, ['ddd, DD MMM YYYY HH.mm.ss Z']]:
-            args = []
-            if fmt is not None:
-                args.append(fmt)
-            try:
-                message_time = arrow.get(fmt_field, *args).datetime
-            except (TypeError, arrow.parser.ParserError):
-                continue
-            else:
-                return message_time
-    else:
-        raise ValueError(f"Bad dates: {dates}")
 

@@ -20,6 +20,7 @@ class EntitySearch(Base):
     id: int = sa.Column(sa.Integer, primary_key=True)
     name: str = sa.Column(sa.String(65534), index=True)
     email: str = sa.Column(sa.String(65534), index=True)
+    github_user: str = sa.Column(sa.String(65534), index=True)
 
     name_idx: str = sa.Column(sa.String, sa.Computed('fusion_name_munge(name)'))
 
@@ -56,11 +57,13 @@ def _fusion_compute(p):
     with multi_session_dropper(get_session, ETable, keep=False):
         with get_session() as sess:
             print(f'Gather data on community members')
-            sess.execute(sa.insert(ETable).from_select(['id', 'name', 'email'],
+            sess.execute(sa.insert(ETable).from_select(['id', 'name', 'email', 'github_user'],
                     sa.select(sch.Entity.id,
                         # NOTE -- may be NULL!
                         sa.func.lower(sch.Entity.attrs['name'].astext),
-                        sa.func.lower(sch.Entity.attrs['email'].astext))
+                        sa.func.lower(sch.Entity.attrs['email'].astext),
+                        sa.func.lower(sch.Entity.attrs['github_user'].astext),
+                    )
                     .where(
                         (sch.Entity.type == 'person') & (sa.func.length(sch.Entity.name) < 1000))
                     ))
@@ -195,6 +198,17 @@ def _fuse_entity(entity_id):
                             ).order_by(ET.id).limit(1)).scalar()
                     if same is not None:
                         add_to_group(obj.id, same.id, f'email match: {obj.email}')
+                        return
+
+                # Same github_user?
+                if obj.github_user:
+                    same = sess.execute(sa.select(ET).where(
+                            (ET.github_user == obj.github_user)
+                            & (ET.id < obj.id)
+                            ).order_by(ET.id).limit(1)).scalar()
+                    if same is not None:
+                        add_to_group(obj.id, same.id, f'github_user match: {obj.github_user}')
+                        return
 
                 # Same name? Don't allow for short names
                 if obj.name and ' ' in obj.name and len(obj.name) > 5:
@@ -204,6 +218,7 @@ def _fuse_entity(entity_id):
                             ).order_by(ET.id).limit(1)).scalar()
                     if same is not None:
                         add_to_group(obj.id, same.id, f'name match: {obj.name}')
+                        return
 
                     # Implementation note: postgres only uses the similarity
                     # index correctly when using an ORDER BY clause with no
@@ -222,6 +237,7 @@ def _fuse_entity(entity_id):
                         add_to_group(obj.id, same[0],
                                 f'names similar: {1 - same[3]:.4f} '
                                 f'for {same[1]} ({same[2]}) vs {obj.name} ({obj.name_idx})')
+                        return
 
                 if not added_to_group:
                     # None of above matches worked. This object is in its own
