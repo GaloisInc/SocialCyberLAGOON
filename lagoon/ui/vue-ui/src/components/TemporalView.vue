@@ -6,7 +6,9 @@ div.temporalview
   //- Width not working? See CSS
   v-dialog(v-model="focusDetails" persistent)
     v-card(style="display: flex; flex-direction: column; max-height: inherit")
-      v-card-title {{cy.$id(focusDetailsId).data('repr')}}
+      v-card-title
+        span {{cy.$id(focusDetailsId).data('repr')}}
+        v-btn(color="primary" @click="$emit('update:focusId', focusDetailsId); focusDetails = false") Focus
       v-card-text(style="flex-grow: 1; flex-shrink: 1; overflow-y: auto")
         table.attrs(:refresh="cyUpdateNumber")
           tr(v-for="[k, v] of Object.entries(cy.$id(focusDetailsId).data('attrs') || {})")
@@ -184,7 +186,7 @@ export default defineComponent({
         format: 'hex',
         alpha: 1,
       }),
-      cyFocusLocked: false,
+      cyFocusLocked: true,
       cyIsRunning: true,
       cyIsRunningLayout: null as any,
       cyTooltips: new Map<any, any>(),
