@@ -13,11 +13,15 @@ div.temporalview
         table.attrs(:refresh="cyUpdateNumber")
           tr(v-for="[k, v] of Object.entries(cy.$id(focusDetailsId).data('attrs') || {})")
             td.key {{k}}
-            td.value(v-if="typeof v === 'object' && v && v.$plugin !== undefined")
-              v-btn(@click="pluginDetails(cy.$id(focusDetailsId), k, v.$plugin)") Run plugin
-            td.value(v-else-if="typeof v === 'object' && v && v.$html"
-                v-html="v.$html")
-            td.value(v-else) {{v}}
+            template(v-if="k === 'commit_sha' && cyFocusCommitToGithub()")
+              td.value
+                a(target="_blank" :href="'https://' + cyFocusCommitToGithub() + '/commit/' + v") {{v}}
+            template(v-else)
+              td.value(v-if="typeof v === 'object' && v && v.$plugin !== undefined")
+                v-btn(@click="pluginDetails(cy.$id(focusDetailsId), k, v.$plugin)") Run plugin
+              td.value(v-else-if="typeof v === 'object' && v && v.$html"
+                  v-html="v.$html")
+              td.value(v-else) {{v}}
           tr(v-for="obj of cy.$id(focusDetailsId).connectedEdges().toArray()")
             td.key
               //- Two equal for str compare
@@ -505,6 +509,16 @@ export default defineComponent({
     });
   },
   methods: {
+    /** Convert a `git_commit` entity to a github URL. */
+    cyFocusCommitToGithub() {
+      const c = this.cy.$id(this.focusDetailsId);
+      for (const f of c.data('fusions')) {
+        const m = /^ingest-git-(github.*?)(\.git)?$/.exec(f.ui_batch_other.resource);
+        if (!m) continue;
+        return m[1];
+      }
+      return null;
+    },
     /** Runs `this.cy.$id(id)`, adapting `id` for entities. */
     cyGetEntity(id: number) {
       return this.cy.$id(this.cyIdEntity(id));
