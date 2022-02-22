@@ -211,7 +211,7 @@ class Client(vuespa.Client):
                         if v is not None:
                             raise NotImplementedError(f'Value {repr(v)}')
                         # Replicating 'm' flag
-                        r.append(r'[^\\n]')
+                        r.append(r'[^\n]')
                     elif k == sre_parse.LITERAL:
                         v = chr(v)
                         if v in '\\.^$()[]{}?*+|/-':
@@ -238,7 +238,7 @@ class Client(vuespa.Client):
                     elif k == sre_parse.AT:
                         subs = {
                                 # The one thing to change
-                                sre_parse.AT_BEGINNING: '(^|\n)',
+                                sre_parse.AT_BEGINNING: r'(^|\n)',
                                 sre_parse.AT_END: '$',
                         }
                         v_r = subs.get(v)
