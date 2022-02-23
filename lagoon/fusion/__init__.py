@@ -198,7 +198,11 @@ def _fuse_entity(entity_id):
                             ).order_by(ET.id).limit(1)).scalar()
                     if same is not None:
                         add_to_group(obj.id, same.id, f'email match: {obj.email}')
-                        return
+                        # NOTE -- cannot return here, because if we have an
+                        # e-mail match to one user, we may *also* have a
+                        # github_user match to a separate user, and then we may
+                        # be the transitive bridge. If we return here, then that
+                        # transitive bridge would not be joined.
 
                 # Same github_user?
                 if obj.github_user:
@@ -208,7 +212,6 @@ def _fuse_entity(entity_id):
                             ).order_by(ET.id).limit(1)).scalar()
                     if same is not None:
                         add_to_group(obj.id, same.id, f'github_user match: {obj.github_user}')
-                        return
 
                 # Same name? Don't allow for short names
                 if obj.name and ' ' in obj.name and len(obj.name) > 5:
@@ -218,7 +221,6 @@ def _fuse_entity(entity_id):
                             ).order_by(ET.id).limit(1)).scalar()
                     if same is not None:
                         add_to_group(obj.id, same.id, f'name match: {obj.name}')
-                        return
 
                     # Implementation note: postgres only uses the similarity
                     # index correctly when using an ORDER BY clause with no
@@ -237,14 +239,15 @@ def _fuse_entity(entity_id):
                         add_to_group(obj.id, same[0],
                                 f'names similar: {1 - same[3]:.4f} '
                                 f'for {same[1]} ({same[2]}) vs {obj.name} ({obj.name_idx})')
-                        return
 
                 if not added_to_group:
                     # None of above matches worked. This object is in its own
                     # group
                     add_to_group(obj.id, obj.id, 'no match')
                 return
-        except sa.exc.IntegrityError:
+        except (sa.exc.IntegrityError, sa.exc.OperationalError):
+            # IntegrityError: Primary key violation
+            # OperationalError: Deadlock detected
             # Try again -- lock free, basically
             time.sleep(random.random())
         except:
