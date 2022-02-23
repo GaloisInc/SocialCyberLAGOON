@@ -5,7 +5,7 @@ div.vuespa-searchbar
       .shade(@click="open=false")
       .modal(@click.stopPropagation)
         div(style="display: flex; flex-direction: row; margin-bottom: 1em")
-          span(style="white-space: nowrap") ID|Regex ^
+          span(style="white-space: nowrap") ID|Regex:
           input(ref="openInput" v-model="searchQuery" placeholder="Entity search"
               style="flex-grow: 1:"
               @focus="$event.target.select()")
@@ -121,7 +121,7 @@ export default defineComponent({
         this.resultsLoading = true;
         try {
           this.results = await this.$vuespa.call(this.endpointData,
-              '^' + this.searchQuery);
+              this.searchQuery);
           console.log(`Search returned ${this.results.length} results`);
         }
         finally {
