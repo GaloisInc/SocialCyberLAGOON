@@ -165,33 +165,7 @@ def _fuse_entity(entity_id):
                                 comment=comment))
 
                 # Same, valid email?
-                # FIXME dynamic -- at the moment this is Python-fixed
-                banned_list = {
-                        'a@b.c',
-                        'bogus@does.not.exist.com',
-                        'invalid@invalid.invalid',
-                        'john@doe.com',
-                        'mail.python.org@marco.sulla.e4ward.com',
-                        'me@privacy.net',
-                        'python-url@phaseit.net',
-                        'python@python.org',
-                        'python-dev@python.org',
-                        'python-help@python.org',
-                        'python-list@python.org',
-                        'support@superhost.gr',
-                        'user@compgroups.net/',
-
-                        # Wildcard list of bad domains
-                        '*@none.com',
-                        '*@nospam.com',
-                        '*@nospam.invalid',
-                        '*@null.com',
-                        '*@spam.com',
-                }
-                if (obj.email
-                        and re.sub(r'^.*?@', '*@', obj.email) not in banned_list
-                        and obj.email not in banned_list
-                        and re.search(r'^.*@.*(?<!example)\..*$', obj.email) is not None):
+                if obj.email and _fuse_entity_valid_email(obj.email):
                     same = sess.execute(sa.select(ET).where(
                             (ET.email == obj.email)
                             & (ET.id < obj.id)
@@ -252,4 +226,62 @@ def _fuse_entity(entity_id):
             time.sleep(random.random())
         except:
             raise ValueError(f'While processing {entity_id}')
+
+
+# Placeholder variable for indeterminate suffix; includes optional dot!
+_S = r'(|\.[^.]*)$'
+# All sub regexes that define invalid or spam e-mail addresses
+# FIXME dynamic -- at the moment there are a lot of Python-specific exclusions
+_valid_email_regex_invalid = re.compile('|'.join([
+        # Multiple at signs
+        r'@.*@',
+        # Single letter domain names (single letter subdomains OK)
+        r'@(.*\.)*.' + _S,
+
+        # Other bad domains
+        r'@bar' + _S,
+        r'@bla\.com',
+        r'@blah' + _S,
+        r'@does\.not\.exist' + _S,
+        r'@domain' + _S,
+        r'@email' + _S,
+        r'@example' + _S,
+        r'@here' + _S,
+        r'@invalid' + _S,
+        r'@mail\.com',
+        r'@me\.com',
+        r'@none?' + _S,
+        r'@nospam' + _S,
+        r'@nowhere' + _S,
+        r'@null' + _S,
+        r'@spam' + _S,
+        r'@someplace' + _S,
+        r'@test' + _S,
+
+        r'^fake@',
+        r'^nobody@',
+        r'^no-?reply@',
+        r'^no-?spam@',
+
+        # Specific addresses that don't fit above
+        r'a@bc\.de',
+        r'aa@bb\.cc',
+        r'asdf@asdf\.com',
+        r'docs@python\.org',
+        r'john@doe\.com',
+        r'john@smith\.com',
+        r'mail\.python\.org@marco\.sulla\.e4ward\.com',
+        r'me@privacy\.net',
+        r'python-url@phaseit\.net',
+        r'python@python\.org',
+        r'python-dev@python\.org',
+        r'python-help@python\.org',
+        r'python-list@python\.org',
+        r'support@superhost\.gr',
+        r'user@compgroups\.net/',
+]))
+def _fuse_entity_valid_email(email):
+    if email and _valid_email_regex_invalid.search(email) is None:
+        return True
+    return False
 
