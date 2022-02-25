@@ -49,7 +49,8 @@ def density_convolve(x, pts, std):
         std: Standard deviation for convolution.
     '''
     d = pts[1] - pts[0]
-    x = torch.tensor(x, dtype=pts.dtype)
+    if not isinstance(x, torch.Tensor):
+        x = torch.tensor(x, dtype=pts.dtype)
     x_arr = torch.zeros_like(pts)
     x_arr.scatter_add_(0,
             ((x - pts[0]) / d).to(torch.long).clamp_(max=pts.size(0)-1),
@@ -109,7 +110,7 @@ def inlay_code(sess, entity_id):
     touched.
     """
     ent = sess.query(sch.FusedEntity).where(sch.FusedEntity.id == entity_id).scalar()
-    st.text('Plot = number unique files touched over time')
+    st.text('Plot = number unique files touched over time, through commits or pull requests')
 
     f1 = sa.orm.aliased(sch.FusedObservation)
     e2 = sa.orm.aliased(sch.FusedEntity)
@@ -172,6 +173,10 @@ def inlay_code(sess, entity_id):
     df['density'] = df['density'].clip(upper=one_kernel)
     df = df.groupby('date').sum().reset_index()
     df['collab'] = ent.name
+
+    max_files = df['density'].max() / one_kernel
+    cur_files = df['density'].values[-1] / one_kernel
+    st.write(f'Index of max concurrent files: {max_files:.1f} (recent {cur_files:.1f})')
     violin(df)
 
 
@@ -378,9 +383,9 @@ def page_pep_groups(sess, entity_id):
     shared_projects = mat.T @ mat
 
     for auth_i in [author_idx[entity_id]]:
-        if shared_projects[auth_i, auth_i] < 5:
-            # Less than 5 peps, ignore this person
-            continue
+        #if shared_projects[auth_i, auth_i] < 5:
+        #    # Less than 5 peps, ignore this person
+        #    continue
 
         st.header(author_idx_rev[auth_i])
         inlay_code(sess, entity_id)
@@ -503,7 +508,7 @@ page = page_opts[page_value]
 st.header(page_value)
 with get_session() as sess:
     st.caption('Well-known user ids:')
-    st.text('Nick Coghlan 131166\nGuido van Rossom 130975\nVictor Stinner 130913\nTerry Jan Reedy 2488888\nThomas Heller 2490207\nNed Deily 2488863\nRaymond Hettinger 2488920')
+    st.text('Nick Coghlan 131166\nGuido van Rossom 130975\nVictor Stinner 130913\nTerry Jan Reedy 130933\nThomas Heller 2490207\nNed Deily 2488863\nRaymond Hettinger 2488920')
     st.text('Moshe Zadka 2940280\nSerhiy Storchaka 2488862\nJim Jewett 2510279')
     entity_id = st.number_input('Entity ID', value=131166)
 
