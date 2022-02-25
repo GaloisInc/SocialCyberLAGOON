@@ -41,6 +41,140 @@ def entity_obs_hops(sess, entity_id, *args, **kwargs):
     return result
 
 
+def density_convolve(x, pts, std):
+    '''
+    Args:
+        x: Data points at which density is observed.
+        pts: Time line to project density onto.
+        std: Standard deviation for convolution.
+    '''
+    d = pts[1] - pts[0]
+    x = torch.tensor(x, dtype=pts.dtype)
+    x_arr = torch.zeros_like(pts)
+    x_arr.scatter_add_(0,
+            ((x - pts[0]) / d).to(torch.long).clamp_(max=pts.size(0)-1),
+            torch.ones_like(x))
+    npts = int(2 * 4 * std / d)
+    if npts % 2 == 0:
+        npts += 1
+    y = scipy.signal.convolve(
+            x_arr,
+            scipy.signal.gaussian(npts, std / d))
+    return y[npts // 2:-(npts // 2)]
+    #x['peps'].sum() * scipy.stats.gaussian_kde(
+    #x['date'],
+    #bw_method=pts,
+    #).evaluate(extent_pts)
+
+
+def violin(df, sort_order=None):
+    '''expects 'date', 'density', and 'collab' columns.
+
+    Optionally, 'density_color' for a bi-color effect.
+    '''
+    c = (alt.Chart(df)
+            #.transform_density(
+            #    'date',
+            #    bandwidth=1*365*24*3600*1e3,
+            #    as_=['date', 'density'],
+            #    extent=extent,
+            #    groupby=['collab'])
+            # We want to keep scale, so adjust a bit
+            .mark_area(orient='vertical').encode(
+                x='date:T',
+                color=alt.Color(
+                    'collab:N' if 'density_color' not in df else 'density_color:N',
+                    title=None if 'density_color' not in df else 'PEP status',
+                    legend=None if 'density_color' not in df else alt.Legend(),
+                ),
+                y=alt.Y('density:Q', stack='center',
+                    impute=None, title=None, axis=alt.Axis(labels=False, values=[0], grid=False, ticks=True)),
+                row=alt.Row('collab:N',
+                    sort=sort_order,
+                    header=alt.Header(
+                        labelFontSize=12,
+                        labelColor='white', labelAngle=0, labelOrient='right',
+                        labelAnchor='end', labelBaseline='bottom',
+                        titleColor='white', titleOrient='left',
+                    )),
+            )
+            .configure_view(height=50, stroke=None)
+            .configure_facet(spacing=0)
+            )
+    st.altair_chart(c, use_container_width=True)
+
+
+def inlay_code(sess, entity_id):
+    """Make a violin density plot of all unique files that this contributor
+    touched.
+    """
+    ent = sess.query(sch.FusedEntity).where(sch.FusedEntity.id == entity_id).scalar()
+    st.text('Plot = number unique files touched over time')
+
+    f1 = sa.orm.aliased(sch.FusedObservation)
+    e2 = sa.orm.aliased(sch.FusedEntity)
+    f2 = sa.orm.aliased(sch.FusedObservation)
+    e3 = sa.orm.aliased(sch.FusedEntity)
+
+    # Step 1 -- find all user commits
+    commits_direct = (sess.query(e2.id)
+            .select_from(f1)
+            .where(f1.src_id == entity_id)
+            .where(f1.type.in_([sch.ObservationTypeEnum.created,
+                sch.ObservationTypeEnum.committed]))
+            .join(e2, e2.id == f1.dst_id)
+            .where(e2.type == sch.EntityTypeEnum.git_commit))
+    # Step 2 -- find all direct PRs
+    pr_direct = (sess.query(e2.id)
+            .select_from(f1)
+            .where(f1.src_id == entity_id)
+            .where(f1.type == sch.ObservationTypeEnum.created)
+            .join(e2, e2.id == f1.dst_id)
+            .where(e2.type == sch.EntityTypeEnum.github_pullrequest)
+    )
+    # Step 3 -- go from PRs to commits (only works if commits were merged in...)
+    pr_subq = pr_direct.subquery()
+    commits_pr = (sess.query(e2.id)
+            .select_from(pr_subq)
+            .join(f1, f1.dst_id == pr_subq.c.id)
+            .where(f1.type == sch.ObservationTypeEnum.attached_to)
+            .join(e2, f1.src_id == e2.id)
+            .where(e2.type == sch.EntityTypeEnum.git_commit))
+
+    # Finally, go from commits to time+file touched
+    commits_all = sa.select(commits_pr.subquery()).union(commits_direct).subquery()
+    file_map = (sess.query(f1.time, e2.name)
+            .select_from(commits_all)
+            .join(f1, f1.src_id == commits_all.c.id)
+            .where(f1.type == sch.ObservationTypeEnum.modified)
+            .join(e2, f1.dst_id == e2.id)
+            .where(e2.type == sch.EntityTypeEnum.file)
+            ).all()
+
+    df = pd.DataFrame(file_map, columns=['date', 'file'])
+    df['date'] = df['date'].apply(lambda x: x.timestamp()*1e3)
+    extent = [arrow.get('1990-01-01').timestamp()*1e3,
+            arrow.get('2020-01-01').timestamp()*1e3]
+    extent_pts = torch.linspace(extent[0], extent[1], 101)
+    density_std = .5*365*24*3600*1e3
+    df = (
+            df.groupby('file')
+            .apply(lambda x: pd.DataFrame({
+                'date': extent_pts,
+                'density': density_convolve(x['date'].values, extent_pts,
+                    std=density_std),
+            }))
+            .reset_index()
+    )
+    one_kernel = density_convolve(torch.tensor([0.]),
+            torch.tensor([-density_std, 0, density_std]),
+            std=density_std).max()
+    df['density'] = df['density'].clip(upper=one_kernel)
+    df = df.groupby('date').sum().reset_index()
+    df['collab'] = ent.name
+    violin(df)
+
+
 def page_contributor_detail(sess, entity_id):
     # Grab an entity
     ent = sess.query(sch.FusedEntity).where(sch.FusedEntity.id == entity_id).scalar()
@@ -140,7 +274,10 @@ def page_contributor_detail(sess, entity_id):
                 continue
 
             n_msg += 1
-            text = obs.dst.attrs['body_text']
+            try:
+                text = obs.dst.attrs['body_text']
+            except KeyError:
+                raise KeyError(f'no body_text in ID {obs.dst.id}')
             text_lines = []
             last_line = None
             for line in text.split('\n'):
@@ -246,6 +383,7 @@ def page_pep_groups(sess, entity_id):
             continue
 
         st.header(author_idx_rev[auth_i])
+        inlay_code(sess, entity_id)
         st.text('First plot = PEP involvement over time; second plot set = P(other author involved|this author involved)')
 
         data = []
@@ -268,30 +406,6 @@ def page_pep_groups(sess, entity_id):
         extent = [arrow.get('1990-01-01').timestamp()*1e3,
                 arrow.get('2020-01-01').timestamp()*1e3]
         extent_pts = torch.linspace(extent[0], extent[1], 101)
-        def density_convolve(x, pts, std):
-            '''
-            Args:
-                x: Data points at which density is observed.
-                pts: Time line to project density onto.
-                std: Standard deviation for convolution.
-            '''
-            d = pts[1] - pts[0]
-            x = torch.tensor(x, dtype=pts.dtype)
-            x_arr = torch.zeros_like(pts)
-            x_arr.scatter_add_(0,
-                    ((x - pts[0]) / d).to(torch.long).clamp_(max=pts.size(0)-1),
-                    torch.ones_like(x))
-            npts = int(2 * 4 * std / d)
-            if npts % 2 == 0:
-                npts += 1
-            y = scipy.signal.convolve(
-                    x_arr,
-                    scipy.signal.gaussian(npts, std / d))
-            return y[npts // 2:-(npts // 2)]
-            #x['peps'].sum() * scipy.stats.gaussian_kde(
-            #x['date'],
-            #bw_method=pts,
-            #).evaluate(extent_pts)
 
         # compute P(Other & Author)
         density_std = .5*365*24*3600*1e3
@@ -306,38 +420,6 @@ def page_pep_groups(sess, entity_id):
                         extent_pts, std=density_std),
                 }))
                 .reset_index())
-
-        def violin(df, sort_order=None):
-            c = (alt.Chart(df)
-                    #.transform_density(
-                    #    'date',
-                    #    bandwidth=1*365*24*3600*1e3,
-                    #    as_=['date', 'density'],
-                    #    extent=extent,
-                    #    groupby=['collab'])
-                    # We want to keep scale, so adjust a bit
-                    .mark_area(orient='vertical').encode(
-                        x='date:T',
-                        color=alt.Color(
-                            'collab:N' if 'density_color' not in df else 'density_color:N',
-                            title=None if 'density_color' not in df else 'PEP status',
-                            legend=None if 'density_color' not in df else alt.Legend(),
-                        ),
-                        y=alt.Y('density:Q', stack='center',
-                            impute=None, title=None, axis=alt.Axis(labels=False, values=[0], grid=False, ticks=True)),
-                        row=alt.Row('collab:N',
-                            sort=sort_order,
-                            header=alt.Header(
-                                labelFontSize=12,
-                                labelColor='white', labelAngle=0, labelOrient='right',
-                                labelAnchor='end', labelBaseline='bottom',
-                                titleColor='white', titleOrient='left',
-                            )),
-                    )
-                    .configure_view(height=50, stroke=None)
-                    .configure_facet(spacing=0)
-                    )
-            st.altair_chart(c, use_container_width=True)
 
         # Make one chart with just P(Author), then P(Other|Author)
         p_auth = df[df['collab'] == author_idx_rev[auth_i]]
@@ -421,9 +503,9 @@ page = page_opts[page_value]
 st.header(page_value)
 with get_session() as sess:
     st.caption('Well-known user ids:')
-    st.text('Nick Coghlan 2489121\nGuido van Rossom 2488930\nVictor Stinner 2488868\nTerry Jan Reedy 2488888\nThomas Heller 2490207\nNed Deily 2488863\nRaymond Hettinger 2488920')
+    st.text('Nick Coghlan 131166\nGuido van Rossom 130975\nVictor Stinner 130913\nTerry Jan Reedy 2488888\nThomas Heller 2490207\nNed Deily 2488863\nRaymond Hettinger 2488920')
     st.text('Moshe Zadka 2940280\nSerhiy Storchaka 2488862\nJim Jewett 2510279')
-    entity_id = st.number_input('Entity ID', value=2489121)
+    entity_id = st.number_input('Entity ID', value=131166)
 
     page['func'](sess, entity_id)
     # Avoid saving anything
