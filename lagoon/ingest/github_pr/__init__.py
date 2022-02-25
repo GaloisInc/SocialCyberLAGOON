@@ -87,7 +87,7 @@ def load_github_pr_riverloop(path: Path):
             elif db_type == ET.github_pullrequest:
                 id = f'{repo_name} PR {db_attrs["github_pr_number"]}'
             elif db_type == ET.message:
-                id = f'Message <{db_attrs["name"]}> hash {hash(db_attrs["message"])}'
+                id = f'Message <{db_attrs["name"]}> hash {hash(db_attrs["body_text"])}'
             else:
                 raise NotImplementedError(db_type)
 
@@ -137,7 +137,7 @@ def load_github_pr_riverloop(path: Path):
                     pr = pr['node']
                     e_pr = entity_lookup(ET.github_pullrequest, {
                             'github_pr_number': pr['number'],
-                            'message': pr['bodyText'],
+                            'body_text': pr['bodyText'],
                             'created': date_field_resolve(pr['publishedAt']).timestamp(),
                     })
 
@@ -178,7 +178,7 @@ def load_github_pr_riverloop(path: Path):
                         pr_c = pr_c['node']
                         pr_c_date = date_field_resolve(pr_c['publishedAt'])
                         e_pr_c = entity_lookup(ET.message, {
-                                'message': pr_c['bodyText'],
+                                'body_text': pr_c['bodyText'],
                                 'name': f'for PR {pr["number"]} on '
                                     f'{arrow.get(pr_c_date).format("YYYY-MM-DD")}',
                         })
@@ -196,7 +196,7 @@ def load_github_pr_riverloop(path: Path):
                         e_pr_c = entity_lookup(ET.github_review, {
                                 'name': rev_name,
                                 'id': pr_c['id'],
-                                'message': pr_c['bodyText'],
+                                'body_text': pr_c['bodyText'],
                         })
                         pr_c_date = date_field_resolve(pr_c['publishedAt'])
                         e_pr_c.obs_as_src.append(sch.Observation(dst=e_pr, batch=batch,
@@ -208,7 +208,7 @@ def load_github_pr_riverloop(path: Path):
 
                         for pr_cc in pr_c['comments']['nodes']:
                             e_pr_cc = entity_lookup(ET.message, {
-                                    'message': pr_cc['bodyText'],
+                                    'body_text': pr_cc['bodyText'],
                                     'name': f'{rev_name} comment {pr_cc["id"]}',
                             })
                             e_pr_cc.obs_as_src.append(sch.Observation(dst=e_pr_c, batch=batch,
