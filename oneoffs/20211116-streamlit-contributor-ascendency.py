@@ -73,6 +73,11 @@ def violin(df, sort_order=None):
 
     Optionally, 'density_color' for a bi-color effect.
     '''
+    if sort_order is not None:
+        # Will crash confusingly
+        uc = set(df['collab'].unique())
+        for v in sort_order:
+            assert v in uc, f'{v} not in {uc}'
     c = (alt.Chart(df)
             #.transform_density(
             #    'date',
@@ -108,58 +113,31 @@ def violin(df, sort_order=None):
 def inlay_code(sess, entity_id):
     """Make a violin density plot of all unique files that this contributor
     touched.
+
+    `entity_id` may be a list for multiple.
     """
-    ent = sess.query(sch.FusedEntity).where(sch.FusedEntity.id == entity_id).scalar()
     st.text('Plot = number unique files touched over time, through commits or pull requests')
 
-    f1 = sa.orm.aliased(sch.FusedObservation)
-    e2 = sa.orm.aliased(sch.FusedEntity)
-    f2 = sa.orm.aliased(sch.FusedObservation)
-    e3 = sa.orm.aliased(sch.FusedEntity)
+    if not isinstance(entity_id, (list, tuple)):
+        entity_id = [entity_id]
+    all_touches = []
+    for eid in entity_id:
+        ent = sess.query(sch.FusedEntity).where(sch.FusedEntity.id == eid).scalar()
+        file_map = _get_icmf_file_map(sess, eid)
+        all_touches.extend([[eid, ent.name, f[0], f[1]] for f in file_map])
 
-    # Step 1 -- find all user commits
-    commits_direct = (sess.query(e2.id)
-            .select_from(f1)
-            .where(f1.src_id == entity_id)
-            .where(f1.type.in_([sch.ObservationTypeEnum.created,
-                sch.ObservationTypeEnum.committed]))
-            .join(e2, e2.id == f1.dst_id)
-            .where(e2.type == sch.EntityTypeEnum.git_commit))
-    # Step 2 -- find all direct PRs
-    pr_direct = (sess.query(e2.id)
-            .select_from(f1)
-            .where(f1.src_id == entity_id)
-            .where(f1.type == sch.ObservationTypeEnum.created)
-            .join(e2, e2.id == f1.dst_id)
-            .where(e2.type == sch.EntityTypeEnum.github_pullrequest)
-    )
-    # Step 3 -- go from PRs to commits (only works if commits were merged in...)
-    pr_subq = pr_direct.subquery()
-    commits_pr = (sess.query(e2.id)
-            .select_from(pr_subq)
-            .join(f1, f1.dst_id == pr_subq.c.id)
-            .where(f1.type == sch.ObservationTypeEnum.attached_to)
-            .join(e2, f1.src_id == e2.id)
-            .where(e2.type == sch.EntityTypeEnum.git_commit))
-
-    # Finally, go from commits to time+file touched
-    commits_all = sa.select(commits_pr.subquery()).union(commits_direct).subquery()
-    file_map = (sess.query(f1.time, e2.name)
-            .select_from(commits_all)
-            .join(f1, f1.src_id == commits_all.c.id)
-            .where(f1.type == sch.ObservationTypeEnum.modified)
-            .join(e2, f1.dst_id == e2.id)
-            .where(e2.type == sch.EntityTypeEnum.file)
-            ).all()
-
-    df = pd.DataFrame(file_map, columns=['date', 'file'])
+    df = pd.DataFrame(all_touches, columns=['eid', 'collab', 'date', 'file'])
     df['date'] = df['date'].apply(lambda x: x.timestamp()*1e3)
     extent = [arrow.get('1990-01-01').timestamp()*1e3,
             arrow.get('2020-01-01').timestamp()*1e3]
     extent_pts = torch.linspace(extent[0], extent[1], 101)
     density_std = .5*365*24*3600*1e3
+    if len(df) == 0:
+        st.write(f'Index of max concurrent files (IMCF): 0 (no commits)')
+        return
+
     df = (
-            df.groupby('file')
+            df.groupby(['eid', 'collab', 'file'])
             .apply(lambda x: pd.DataFrame({
                 'date': extent_pts,
                 'density': density_convolve(x['date'].values, extent_pts,
@@ -171,13 +149,20 @@ def inlay_code(sess, entity_id):
             torch.tensor([-density_std, 0, density_std]),
             std=density_std).max()
     df['density'] = df['density'].clip(upper=one_kernel)
-    df = df.groupby('date').sum().reset_index()
-    df['collab'] = ent.name
+    df = df.groupby(['eid', 'collab', 'date']).sum().reset_index()
 
-    max_files = df['density'].max() / one_kernel
-    cur_files = df['density'].values[-1] / one_kernel
-    st.write(f'Index of max concurrent files: {max_files:.1f} (recent {cur_files:.1f})')
-    violin(df)
+    # Assign IMCF scores, keep order
+    max_files = df.groupby('collab')['density'].max() / one_kernel
+    cur_files = df.groupby('collab')['density'].last() / one_kernel
+    st.write(f'Index of max concurrent files (IMCF)')
+    df['collab'] = df['collab'].apply(lambda x:
+            f'{x} (IMCF {cur_files.loc[x]:.1f}, max {max_files.loc[x]:.1f})')
+
+    sort_order = df.groupby(['eid', 'collab']).first().index.values
+    sort_order = sorted(sort_order, key=lambda m: entity_id.index(m[0]))
+    sort_order = [s[1] for s in sort_order]
+
+    violin(df, sort_order=sort_order)
 
 
 def page_contributor_detail(sess, entity_id):
@@ -333,6 +318,79 @@ def page_contributor_detail(sess, entity_id):
     bar.progress(1.)
 
 
+@cache_dec()
+def _get_icmf_file_map(sess, eid):
+    f1 = sa.orm.aliased(sch.FusedObservation)
+    e2 = sa.orm.aliased(sch.FusedEntity)
+    f2 = sa.orm.aliased(sch.FusedObservation)
+    e3 = sa.orm.aliased(sch.FusedEntity)
+
+    # Step 1 -- find all user commits
+    commits_direct = (sess.query(e2.id)
+            .select_from(f1)
+            .where(f1.src_id == eid)
+            .where(f1.type.in_([sch.ObservationTypeEnum.created,
+                sch.ObservationTypeEnum.committed]))
+            .join(e2, e2.id == f1.dst_id)
+            .where(e2.type == sch.EntityTypeEnum.git_commit))
+    # Step 2 -- find all direct PRs
+    pr_direct = (sess.query(e2.id)
+            .select_from(f1)
+            .where(f1.src_id == eid)
+            .where(f1.type == sch.ObservationTypeEnum.created)
+            .join(e2, e2.id == f1.dst_id)
+            .where(e2.type == sch.EntityTypeEnum.github_pullrequest)
+    )
+    # Step 3 -- go from PRs to commits (only works if commits were merged in...)
+    pr_subq = pr_direct.subquery()
+    commits_pr = (sess.query(e2.id)
+            .select_from(pr_subq)
+            .join(f1, f1.dst_id == pr_subq.c.id)
+            .where(f1.type == sch.ObservationTypeEnum.attached_to)
+            .join(e2, f1.src_id == e2.id)
+            .where(e2.type == sch.EntityTypeEnum.git_commit))
+
+    # Finally, go from commits to time+file touched
+    commits_all = sa.select(commits_pr.subquery()).union(commits_direct).subquery()
+    file_map = (sess.query(f1.time, e2.name)
+            .select_from(commits_all)
+            .join(f1, f1.src_id == commits_all.c.id)
+            .where(f1.type == sch.ObservationTypeEnum.modified)
+            .join(e2, f1.dst_id == e2.id)
+            .where(e2.type == sch.EntityTypeEnum.file)
+            ).all()
+    return file_map
+
+
+@cache_dec()
+def _get_icmf_top(sess):
+    e1 = sa.orm.aliased(sch.FusedEntity)
+    f1 = sa.orm.aliased(sch.FusedObservation)
+    e2 = sa.orm.aliased(sch.FusedEntity)
+    f2 = sa.orm.aliased(sch.FusedObservation)
+    e3 = sa.orm.aliased(sch.FusedEntity)
+    q = (sess.query(e1.id, e1.name, sa.func.count())
+            .select_from(e1)
+            .where(e1.type == sch.EntityTypeEnum.person)
+            .join(f1, f1.src_id == e1.id)
+            .where(f1.type.in_([sch.ObservationTypeEnum.created,
+                sch.ObservationTypeEnum.committed]))
+            .join(e2, e2.id == f1.dst_id)
+            .where(e2.type == sch.EntityTypeEnum.git_commit)
+            # Uncomment these next lines to do count of files modified
+            # Otherwise, Lukasz Langa doesn't show up.
+            .join(f2, f2.src_id == e2.id)
+            .where(f2.type == sch.ObservationTypeEnum.modified)
+            .join(e3, f2.dst_id == e3.id)
+            .where(e3.type == sch.EntityTypeEnum.file)
+
+            .where(f1.time >= arrow.get('2018-01-01').datetime)
+            .group_by(e1.id, e1.name)
+            .order_by(sa.func.count().desc())
+            ).limit(20).all()
+    return q
+
+
 def page_pep_groups(sess, entity_id):
     only_authored = st.checkbox('Only PEPS from this author')
 
@@ -382,6 +440,9 @@ def page_pep_groups(sess, entity_id):
     mat = mat.to_dense()  # Sparse support is terrible
     shared_projects = mat.T @ mat
 
+    q = _get_icmf_top(sess)
+    inlay_code(sess, [qq[0] for qq in q])
+
     for auth_i in [author_idx[entity_id]]:
         #if shared_projects[auth_i, auth_i] < 5:
         #    # Less than 5 peps, ignore this person
@@ -389,7 +450,7 @@ def page_pep_groups(sess, entity_id):
 
         st.header(author_idx_rev[auth_i])
         inlay_code(sess, entity_id)
-        st.text('First plot = PEP involvement over time; second plot set = P(other author involved|this author involved)')
+        st.text('First plot = PEP involvement over time; \nsecond plot set = P(other author involved|this author involved)')
 
         data = []
         collabs_seen = set()
@@ -509,7 +570,7 @@ st.header(page_value)
 with get_session() as sess:
     st.caption('Well-known user ids:')
     st.text('Nick Coghlan 131166\nGuido van Rossom 130975\nVictor Stinner 130913\nTerry Jan Reedy 130933\nThomas Heller 2490207\nNed Deily 2488863\nRaymond Hettinger 2488920')
-    st.text('Moshe Zadka 2940280\nSerhiy Storchaka 2488862\nJim Jewett 2510279')
+    st.text('Moshe Zadka 2940280\nSerhiy Storchaka 2488862\nJim Jewett 8712533')
     entity_id = st.number_input('Entity ID', value=131166)
 
     page['func'](sess, entity_id)
