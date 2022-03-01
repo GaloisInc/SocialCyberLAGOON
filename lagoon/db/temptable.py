@@ -88,7 +88,7 @@ def multi_session_dropper(sess_factory, table, *, keep=False):
     finally:
         if not keep:
             with sess_factory() as sess:
-                sess.execute(sa.text(f'''DROP TABLE "{table_name}"'''))
+                sess.execute(sa.text(f'''DROP TABLE IF EXISTS "{table_name}"'''))
         _multi_session_tables.pop(table_name, None)
 
 
