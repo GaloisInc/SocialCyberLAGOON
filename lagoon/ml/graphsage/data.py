@@ -30,10 +30,10 @@ def save_data_toxicity(start, end):
     x_neighbors_all = []
     ids = []
     
-    print('Getting persons in window...')
-    entity_ids = utils.get_entities_in_window(start=start, end=end)
-    
     with get_session() as sess:
+        print('Getting persons in window...')
+        entity_ids = utils.get_entities_in_window(sess, start=start, end=end)
+
         # Restrict persons
         persons = sess.query(sch.FusedEntity).where(sch.FusedEntity.id.in_(entity_ids)).where(sch.FusedEntity.type==sch.EntityTypeEnum.person)
         
@@ -47,14 +47,14 @@ def save_data_toxicity(start, end):
             x_neighbors_interm = []
 
             ## Get neighbors
-            person_neighbors = utils.get_neighboring_entities(person, hop=1, start=start, end=end, return_self=False)
+            person_neighbors = utils.get_neighboring_entities(sess, person, hop=1, start=start, end=end, return_self=False)
             
             ## For each node in current person + its neighbors
             for node in [person]+person_neighbors.all():
                 x_self = [node.attrs.get(key,0) for key in TOXICITY_CATEGORIES]
                 
                 ## Get neighbors and their features
-                neighbors = utils.get_neighboring_entities(node, hop=1, start=start, end=end, return_self=False)
+                neighbors = utils.get_neighboring_entities(sess, node, hop=1, start=start, end=end, return_self=False)
                 x_neighbors = []
                 for neighbor in neighbors:
                     x_neighbors.append([neighbor.attrs.get(key,0) for key in TOXICITY_CATEGORIES])

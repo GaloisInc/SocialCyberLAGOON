@@ -6,6 +6,7 @@ import arrow
 import os
 from ast import literal_eval
 from tqdm import tqdm
+import csv
 
 import pandas as pd
 import numpy as np
@@ -27,8 +28,9 @@ def save_persons_gapranges(gap=183, dtformat='%Y-%m-%d'):
 
     with get_session() as sess:
         persons = sess.query(sch.FusedEntity).where(sch.FusedEntity.type==sch.EntityTypeEnum.person)
+        count = persons.count()
         
-        for person in tqdm(persons.all()):
+        for person in tqdm(persons, total=count):
             id_all.append(person.id)
             datetimes = sorted([ob.time for ob in person.obs_hops(1)])
             
@@ -41,7 +43,7 @@ def save_persons_gapranges(gap=183, dtformat='%Y-%m-%d'):
     df = pd.DataFrame({'id':id_all, 'gaps':gaps_all})
     foldername = os.path.join(DATA_FOLDER, 'targets')
     os.makedirs(foldername, exist_ok=True)
-    df.to_csv(os.path.join(foldername, f'persons_{gap}daygaps_all.csv'), index=False)
+    df.to_csv(os.path.join(foldername, f'persons_{gap}daygapranges_all.csv'), index=False)
 
 
 def save_persons_gaps_yearly(years = range(1990,2022), persons_gaps_filepath = os.path.join(os.path.join(DATA_FOLDER, 'targets'), 'persons_183daygapranges_all.csv')):
@@ -54,11 +56,12 @@ def save_persons_gaps_yearly(years = range(1990,2022), persons_gaps_filepath = o
     persons_gaps = pd.read_csv(persons_gaps_filepath, index_col='id')
     
     with get_session() as sess:
-        persons = sess.query(sch.FusedEntity).where(sch.FusedEntity.type==sch.EntityTypeEnum.person).all()
-        id_all = len(persons)*[0]
-        gaps_all = {year:len(persons)*[0] for year in years}
+        persons = sess.query(sch.FusedEntity).where(sch.FusedEntity.type==sch.EntityTypeEnum.person)
+        count = persons.count()
+        id_all = count*[0]
+        gaps_all = {year:count*[0] for year in years}
 
-        for i,person in enumerate(tqdm(persons)):
+        for i,person in enumerate(tqdm(persons, total=count)):
             id_all[i] = person.id
             gaps = literal_eval(persons_gaps['gaps'][person.id])
             
@@ -77,11 +80,12 @@ def save_persons_activity_yearly(years = range(1990,2022)):
     Activity for a year is the number of activities in that year
     """
     with get_session() as sess:
-        persons = sess.query(sch.FusedEntity).where(sch.FusedEntity.type==sch.EntityTypeEnum.person).all()
-        id_all = len(persons)*[0]
-        activity = {year:len(persons)*[0] for year in years}
+        persons = sess.query(sch.FusedEntity).where(sch.FusedEntity.type==sch.EntityTypeEnum.person)
+        count = persons.count()
+        id_all = count*[0]
+        activity = {year:count*[0] for year in years}
 
-        for i,person in enumerate(tqdm(persons)):
+        for i,person in enumerate(tqdm(persons, total=count)):
             id_all[i] = person.id
             for ob in person.obs_hops(1):
                 activity[ob.time.year][i] += 1
@@ -113,3 +117,42 @@ def get_persons_activity_target(row, start_year):
     else:
         target = 1 - next_avg/prev_avg
     return target
+
+
+def save_persons_hibp_breaches():
+    """
+    For each person FusedEntity in the db, sum up attrs['breaches'] for its component entities
+    Save this summed breaches number as the target
+    
+    Note:
+        If none of the component entities for a FusedEntity have attrs['breaches'], then that person is excluded due to having no valid, non-spam emails
+        This is different from the case where a person has valid, non-spam emails, none of which are found in HIBP. That leads to the target being 0, as expected.
+    """
+    with get_session() as sess:
+        
+        with open(os.path.join(DATA_FOLDER, 'targets/persons_hibp_breaches.csv'), 'a') as csvfile:
+            csvwriter = csv.writer(csvfile)
+            csvwriter.writerow([
+                'id',
+                'breaches'
+            ])
+
+            persons = sess.query(sch.FusedEntity).where(sch.FusedEntity.type==sch.EntityTypeEnum.person)
+            count = persons.count()
+            
+            for person in tqdm(persons, total=count):
+                breaches = 0
+                breaches_found = False # track whether any component entity has attrs['breaches']
+                
+                for ent in person.attrs_sources:
+                    try:
+                        breaches += ent.attrs['breaches']
+                        breaches_found = True # at least one component entity must have the 'breaches' attr
+                    except KeyError:
+                        pass
+
+                if breaches_found:
+                    csvwriter.writerow([
+                        person.id,
+                        breaches
+                    ])

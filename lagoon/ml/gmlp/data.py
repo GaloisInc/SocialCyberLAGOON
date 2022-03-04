@@ -30,17 +30,21 @@ def aggregate_attrs_of_neighbors(entity: sch.FusedEntity, attr_keys: List[str], 
     """
     attrs_aggr_all = {}
     
-    for hop in hops:
-        neighbors = utils.get_neighboring_entities(entity=entity, hop=hop, start=start, end=end, return_self=True) # Set return_self=True if not following NOTE 1
-        
-        attrs_all = {key:[] for key in attr_keys}
-        for neighbor in neighbors:
-            for key in attr_keys:
-                attrs_all[key].append(neighbor.attrs.get(key,0))
-        
-        attrs_all = {f'hop{hop}_{key}': attrs_all[key] for key in attrs_all.keys()} #add prefix hop number to the keys
-        attrs_aggr = {key: np.sum(attrs_all[key]) for key in attrs_all.keys()} #NOTE: Aggregation is hardcoded to sum right now
-        attrs_aggr_all = {**attrs_aggr_all, **attrs_aggr}
+    with get_session() as sess:
+        for hop in hops:
+            neighbors = utils.get_neighboring_entities(
+                sess=sess, entity=entity,
+                hop=hop, start=start, end=end, return_self=True
+            ) # Set return_self=True if not following NOTE 1
+            
+            attrs_all = {key:[] for key in attr_keys}
+            for neighbor in neighbors:
+                for key in attr_keys:
+                    attrs_all[key].append(neighbor.attrs.get(key,0))
+            
+            attrs_all = {f'hop{hop}_{key}': attrs_all[key] for key in attrs_all.keys()} #add prefix hop number to the keys
+            attrs_aggr = {key: np.sum(attrs_all[key]) for key in attrs_all.keys()} #NOTE: Aggregation is hardcoded to sum right now
+            attrs_aggr_all = {**attrs_aggr_all, **attrs_aggr}
     
     return attrs_aggr_all
 
@@ -53,10 +57,10 @@ def save_persons_toxicity(start: str, end: str, hops: List[int] = [1,2]) -> None
     """
     df = pd.DataFrame()
     
-    print('Getting persons in window...')
-    entity_ids = utils.get_entities_in_window(start=start, end=end)
-    
     with get_session() as sess:
+        print('Getting persons in window...')
+        entity_ids = utils.get_entities_in_window(sess, start=start, end=end)
+
         # Restrict persons
         persons = sess.query(sch.FusedEntity).where(sch.FusedEntity.id.in_(entity_ids)).where(sch.FusedEntity.type==sch.EntityTypeEnum.person)
         

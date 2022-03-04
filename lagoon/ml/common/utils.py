@@ -1,3 +1,7 @@
+import sqlalchemy as sa
+from lagoon.db import schema as sch
+from lagoon.ml.config import *
+
 import arrow
 import os
 import shortuuid
@@ -8,11 +12,7 @@ from typing import List, Union
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-
-import sqlalchemy as sa
-from lagoon.db.connection import get_session
-from lagoon.db import schema as sch
-from lagoon.ml.config import *
+from math import ceil
 
 
 ########################################################################
@@ -123,23 +123,27 @@ def get_entity_ids_from_obs(obs: Union[List, sa.orm.query.Query]) -> List[int]:
     return list(entity_ids)
 
 
-def get_neighboring_entities(entity: sch.FusedEntity, hop: int = 1, start: str = None, end: str = None, return_self: bool = False) -> sa.orm.query.Query:
+def get_neighboring_entities(
+    sess: sa.orm.session.Session, entity: sch.FusedEntity,
+    hop: int = 1, start: str = None, end: str = None, return_self: bool = False
+) -> sa.orm.query.Query:
     """
     Given an entity `entity`, get all the entities at `hop`-hop distance from it for a time window from `start` to `end`. If None, use beginning of time to end of time.
     Return a query (instead of a list) so that additional SQL filtering can be applied if desired
-    If return_self is False, remove `entity` from the returned entities since we generally don't want to return itself
+        If `return_self` is False, remove `entity` from the returned entities since we generally don't want to return itself
+    sess: Pass a running session so that a new one is not created
     """
     entity_ids = get_entity_ids_from_obs(entity.obs_hops(k=hop, time_min = None if not start else arrow.get(start).datetime, time_max = None if not end else arrow.get(end).datetime))
-    with get_session() as sess:
-        if not return_self:
-            entity_ids.remove(entity.id) #since get_entity_ids_from_obs also includes id of the entity itself
-        neighbors = sess.query(sch.FusedEntity).where(sch.FusedEntity.id.in_(list(entity_ids)))
-        return neighbors
+    if not return_self and entity.id in entity_ids:
+        entity_ids.remove(entity.id) #since get_entity_ids_from_obs also includes id of the entity itself
+    neighbors = sess.query(sch.FusedEntity).where(sch.FusedEntity.id.in_(list(entity_ids)))
+    return neighbors
 
 
-def get_entities_in_window(start: str, end: str, method: int = 1) -> List[int]:
+def get_entities_in_window(sess: sa.orm.session.Session, start: str, end: str, method: int = 1) -> List[int]:
     """
     Get all entities which are connected to observations in a given time window
+    sess: Pass a running session so that a new one is not created
 
     Method 1 - Observation centric
     - Runtime to retrieve 4511 entities from 2015-01-01 to 2015-01-31 = 3.4 seconds
@@ -161,21 +165,18 @@ def get_entities_in_window(start: str, end: str, method: int = 1) -> List[int]:
     - Method 1 is usually superior since it is more generic (returns all entities which can be type-filtered as desired later) and is usually faster unless the time frame is very large, in which case we want to use Method 3 with some type-filtering.
     """
     if method==1:
-        with get_session() as sess:
-            obs = sess.query(sch.FusedObservation).where(sa.and_(sch.FusedObservation.time >= arrow.get(start).datetime, sch.FusedObservation.time <= arrow.get(end).datetime))
+        obs = sess.query(sch.FusedObservation).where(sa.and_(sch.FusedObservation.time >= arrow.get(start).datetime, sch.FusedObservation.time <= arrow.get(end).datetime))
         return get_entity_ids_from_obs(obs)
     
     if method==2:
         entity_ids = []
-        with get_session() as sess:
-            for entity in sess.query(sch.FusedEntity).where(sch.FusedEntity.type==sch.EntityTypeEnum.person):
-                if entity.obs_hops(1, time_min=arrow.get(start).datetime, time_max=arrow.get(end).datetime):
-                    entity_ids.append(entity.id)
+        for entity in sess.query(sch.FusedEntity).where(sch.FusedEntity.type==sch.EntityTypeEnum.person):
+            if entity.obs_hops(1, time_min=arrow.get(start).datetime, time_max=arrow.get(end).datetime):
+                entity_ids.append(entity.id)
         return entity_ids
 
     if method==3:
-        with get_session() as sess:
-            entity_ids = sess.query(sch.FusedEntity.id).where(sa.select(sch.FusedObservation).where(sch.FusedEntity.id.in_([sch.FusedObservation.src_id, sch.FusedObservation.dst_id])).where(sa.and_(sch.FusedObservation.time >= arrow.get(start).datetime, sch.FusedObservation.time <= arrow.get(end).datetime)).exists())
+        entity_ids = sess.query(sch.FusedEntity.id).where(sa.select(sch.FusedObservation).where(sch.FusedEntity.id.in_([sch.FusedObservation.src_id, sch.FusedObservation.dst_id])).where(sa.and_(sch.FusedObservation.time >= arrow.get(start).datetime, sch.FusedObservation.time <= arrow.get(end).datetime)).exists())
         return entity_ids.all()
 
 
@@ -229,3 +230,25 @@ def log_scaling(xtr, xva=None, xte=None):
     if xte is not None:
         xte = np.log10(1+xte)
     return xtr,xva,xte
+
+
+########################################################################
+# Aggregating functions
+########################################################################
+
+def top_n_mean(arr, n=10):
+    return np.mean(sorted(arr, reverse=True)[:n])
+
+def test_top_n_mean():
+    assert top_n_mean(range(1000), 10) == 994.5
+    assert top_n_mean(range(6), 10) == 2.5
+    assert top_n_mean([0.5], 10) == 0.5
+
+
+def top_n_pct_mean(arr, n=10):
+    return np.mean(sorted(arr, reverse=True)[:ceil(n/100*len(arr))])
+
+def test_top_n_pct_mean():
+    assert top_n_pct_mean(range(1000), 10) == 949.5
+    assert top_n_pct_mean(range(6), 10) == 5
+    assert top_n_pct_mean([0.5], 10) == 0.5

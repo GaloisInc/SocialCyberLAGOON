@@ -147,11 +147,12 @@ def plot_peps_toxicity(good_bad_buffer: int = 10, figsize: Tuple[int,int] = (16,
     peps_stats = pd.read_csv(os.path.join(RESULTS_FOLDER, 'python_peps/peps_stats.csv'))
 
     for hop in [1,2]:
-        for text in ['messages','words']:
-            key = f'hop{hop}_badwords_{text}_frac'
-            good = np.asarray(peps_stats[peps_stats['status_quality']=='good'][key])
-            bad = np.asarray(peps_stats[peps_stats['status_quality']=='bad'][key])
-            if text=='words': #convert to percentage
+        for suffix in ['nlp_top_n_pct_mean', 'nlp_top_n_mean', 'badwords_messages_frac', 'badwords_words_frac']:
+            key = f'hop{hop}_toxicity_{suffix}'
+            series = peps_stats[key].dropna()
+            good = np.asarray(series[peps_stats['status_quality']=='good'])
+            bad = np.asarray(series[peps_stats['status_quality']=='bad'])
+            if suffix=='badwords_words_frac': #convert to percentage
                 good *= 100.
                 bad *= 100.
                 key = key.replace('_frac','_percentage')
@@ -161,11 +162,17 @@ def plot_peps_toxicity(good_bad_buffer: int = 10, figsize: Tuple[int,int] = (16,
             plt.bar(range(len(good)+good_bad_buffer, len(good)+good_bad_buffer+len(bad)), bad, color='r', label=LABELS['bad'])
             plt.xticks([])
             plt.yticks(fontsize=figsize[0])
-            plt.ylabel('Count' if text=='messages' else 'Chance (%)', fontsize=int(1.5*figsize[1]))
-            title = 'Total bad word count' if text=='messages' else 'Percentage chance of a bad word'
-            plt.title(f'{title} in messages in the {hop}-hop neighborhood of PEPs\nMedian for good PEPs = {np.round(np.median(good),3)}, Median for bad PEPs = {np.round(np.median(bad),3)}', fontsize=figsize[0]+4)
+            plt.ylabel('Chance (%)' if suffix=='badwords_words_frac' \
+                else 'Count' if suffix=='badwords_messages_frac' \
+                else 'Score',
+                fontsize=int(1.5*figsize[1]))
+            title = 'Average number of bad words in' if suffix=='badwords_messages_frac' \
+                else 'Chance of a word being bad in' if suffix=='badwords_words_frac' \
+                else 'Average of top 10% of toxicity scores of' if suffix=='nlp_top_n_pct_mean' \
+                else 'Average of top 10 toxicity scores of'
+            plt.title(f'{title} texts in the {hop}-hop neighborhood of PEPs\nMean for good PEPs = {np.round(np.mean(good),3)}, Mean for bad PEPs = {np.round(np.mean(bad),3)}', fontsize=figsize[0]+4)
             plt.grid()
-            plt.legend(fontsize=figsize[0]+4)
+            plt.legend(fontsize=figsize[0]+2)
             plt.savefig(os.path.join(RESULTS_FOLDER, f'python_peps/peps_{key}.png'), dpi=300, bbox_inches='tight', pad_inches=0.1)
 
 
@@ -263,11 +270,11 @@ def plot_author_peps_disengagement_wrapper():
 
 
 if __name__ == "__main__":
-    plot_authors_collab_matrix()
-    plot_authors_collab_matrix(ignore_diagonal=False)
-    plot_authors_collab_matrix(cutoff=40)
-    plot_authors_pep_statuses(cutoff=40)
-    plot_authors_pep_statuses(cutoff=40, start='2016-01-01', end='2020-12-31')
-    plot_authors_pep_statuses_bottom(start=40)
+    # plot_authors_collab_matrix()
+    # plot_authors_collab_matrix(ignore_diagonal=False)
+    # plot_authors_collab_matrix(cutoff=40)
+    # plot_authors_pep_statuses(cutoff=40)
+    # plot_authors_pep_statuses(cutoff=40, start='2016-01-01', end='2020-12-31')
+    # plot_authors_pep_statuses_bottom(start=40)
     plot_peps_toxicity()
-    plot_author_peps_disengagement_wrapper()
+    # plot_author_peps_disengagement_wrapper()

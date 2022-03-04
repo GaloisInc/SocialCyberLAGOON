@@ -130,18 +130,35 @@ def save_authors_collab_matrix() -> None:
     np.save(os.path.join(RESULTS_FOLDER, 'python_peps/authors_collab_matrix.npy'), authors_collab_matrix)
 
 
-def save_peps_stats() -> None:
-    peps_stats = {k: [] for k in [
-        'DB_id',
+def save_peps_stats(compute_badwords=False, compute_nlp=True) -> None:
+    """
+    Save stats for PEPs, ordered by number
+        Some common stats are computed
+        compute_badwords: If set, toxicity stats from bad words are computed
+        compute_nlp: If set, toxicity stats from NLP model(s) are computed
+    Toxicity stats can be aggregated in various ways
+    """
+    cols = [
         'number',
         'type',
         'status',
         'status_quality',
-        'hop1_badwords_messages_frac',
-        'hop1_badwords_words_frac',
-        'hop2_badwords_messages_frac',
-        'hop2_badwords_words_frac'
-    ]} # it would be better to use a defaultdict, but this ensures an easy way to see all the columns
+    ]
+    if compute_badwords:
+        cols += [
+            'hop1_toxicity_badwords_messages_frac', # divide total badword count by number of neighboring messages
+            'hop1_toxicity_badwords_words_frac', # divide total badword count by number of words in neighboring messages
+            'hop2_toxicity_badwords_messages_frac',
+            'hop2_toxicity_badwords_words_frac'
+        ]
+    if compute_nlp:
+        cols += [
+            'hop1_toxicity_nlp_top_n_pct_mean', # relevant functions are defined in utils, under aggregating functions
+            'hop1_toxicity_nlp_top_n_mean',
+            'hop2_toxicity_nlp_top_n_pct_mean',
+            'hop2_toxicity_nlp_top_n_mean'
+        ]
+    peps_stats = {k: [] for k in cols} # it would be better to use a defaultdict, but this ensures an easy way to see all the columns
 
     def get_status_quality(status: str) -> str:
         for key in PEP_STATUSES.keys():
@@ -152,33 +169,38 @@ def save_peps_stats() -> None:
     with get_session() as sess:
         peps = sess.query(sch.FusedEntity).where(sch.FusedEntity.type==sch.EntityTypeEnum.pep)
         for pep in tqdm(peps, total=peps.count()):
-            peps_stats['DB_id'].append(pep.id)
             peps_stats['number'].append(pep.attrs['number'])
             peps_stats['type'].append(pep.attrs['type'])
             peps_stats['status'].append(pep.attrs['status'])
             peps_stats['status_quality'].append(get_status_quality(pep.attrs['status']))
-            for hop in [1,2]:
-                computed_badwords_total = 0
-                words_total = 0
-                messages = utils.get_neighboring_entities(pep, hop=hop).where(sch.FusedEntity.type==sch.EntityTypeEnum.message)
-                
-                for message in messages:
-                    computed_badwords_total += sum([message.attrs.get(key,0) for key in TOXICITY_CATEGORIES])
-                    words_total += utils.count_words(message.attrs.get('body_text',''))
-                
-                denom = messages.count()
-                peps_stats[f'hop{hop}_badwords_messages_frac'].append(computed_badwords_total / denom if denom!=0 else 0.)
-                
-                denom = words_total
-                peps_stats[f'hop{hop}_badwords_words_frac'].append(computed_badwords_total / denom if denom!=0 else 0.)
+            
+            if compute_badwords:
+                for hop in [1,2]:
+                    computed_badwords_total = 0
+                    words_total = 0
+                    messages = utils.get_neighboring_entities(sess, pep, hop=hop).where(sch.FusedEntity.type==sch.EntityTypeEnum.message)
+                    
+                    for message in messages:
+                        computed_badwords_total += sum([message.attrs.get(key,0) for key in TOXICITY_CATEGORIES])
+                        words_total += utils.count_words(message.attrs.get('body_text',''))
+                    
+                    denom = messages.count()
+                    peps_stats[f'hop{hop}_badwords_messages_frac'].append(computed_badwords_total / denom if denom!=0 else np.nan)
+                    
+                    denom = words_total
+                    peps_stats[f'hop{hop}_badwords_words_frac'].append(computed_badwords_total / denom if denom!=0 else np.nan)
+
+            if compute_nlp:
+                text_entity_types = [
+                    sch.EntityTypeEnum.git_commit,
+                    sch.EntityTypeEnum.message
+                ]
+                for hop in [1,2]:
+                    text_neighbors = utils.get_neighboring_entities(sess, pep, hop=hop).where(sch.FusedEntity.type.in_(text_entity_types))
+                    toxicity_nlp_scores = [text_neighbor.attrs.get('toxicity_nlp_classification', [1.,0.])[1] for text_neighbor in text_neighbors]
+                    peps_stats[f'hop{hop}_toxicity_nlp_top_n_pct_mean'].append(utils.top_n_pct_mean(toxicity_nlp_scores) if toxicity_nlp_scores else np.nan)
+                    peps_stats[f'hop{hop}_toxicity_nlp_top_n_mean'].append(utils.top_n_mean(toxicity_nlp_scores) if toxicity_nlp_scores else np.nan)
 
     peps_stats = pd.DataFrame(data=peps_stats)
     peps_stats.sort_values('number', ascending=True, inplace=True, ignore_index=True)
     peps_stats.to_csv(os.path.join(RESULTS_FOLDER, 'python_peps/peps_stats.csv'), index=False)
-
-
-if __name__ == "__main__":
-    save_authors_stats()
-    save_authors_stats(start='2016-01-01', end='2020-12-31')
-    save_authors_collab_matrix()
-    save_peps_stats()

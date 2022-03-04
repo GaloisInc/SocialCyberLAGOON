@@ -29,3 +29,5 @@ PEP_STATUSES = {
     'bad': ['withdrawn', 'rejected', 'deferred', 'april fool!'], # 'april fool!' was actually a rejected PEP
     'other': ['draft', 'provisional'] # 'draft' and 'provisional' PEPs can go both ways, hence are classified as 'other'
 }
+
+NLP_MODELS_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'nlp_models')

@@ -2,7 +2,9 @@ alembic
 arrow
 asyncpg
 beautifulsoup4
+docker
 GitPython
+ipython
 psycopg2-binary
 shortuuid
 sqlalchemy
@@ -11,4 +13,3 @@ sqlalchemy-utils
 tqdm
 typer
 vuespa>=0.5.0
-

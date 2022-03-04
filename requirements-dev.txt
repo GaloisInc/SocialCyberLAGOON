@@ -1,5 +1,3 @@
-docker
-ipython
 sphinx
 sphinx-autoapi
 sphinx-codefence

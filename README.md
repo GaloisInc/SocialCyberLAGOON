@@ -5,12 +5,15 @@ This is the LAGOON (acronym...) project source code.
 
 Note that `./lagoon_cli.py` is a CLI for running common LAGOON functions.
 
-1. Run `pip install -r` on both `requirements*.txt` files to ensure your Python environment has LAGOON's dependencies.
+1. Run `pip install -r requirements.txt` to ensure your Python environment has LAGOON's dependencies.
 2. Also ensure you have Docker installed.
 3. Run `./lagoon_cli.py dev up` to launch an appropriately configured Postgres DB (and any other services required by LAGOON).
 4. Either use a pre-populated database or build one from scratch (see two sections below).
 5. Run `./lagoon_cli.py ui` to browse around visually.
 6. Run `./lagoon_cli.py shell` to interact with the database in a CLI.
+7. If running machine learning experiments is desired:
+    1. Run `pip install -r requirements-ml.txt`.
+    2. Clone the [`lagoon-artifacts` repository](https://gitlab-ext.galois.com/lagoon/lagoon-artifacts) as a sibling to this repository.
 
 
 ## Using a pre-populated database
@@ -28,11 +31,17 @@ This method is preferred, as it saves a lot of time.
 4. Run `./lagoon_cli.py ingest ocean_pickle load ~/Downloads/python.pck` to extract information from OCEAN data.
 5. Run `./lagoon_cli.py ingest python_peps load` to extract information regarding Python PEPs into the LAGOON database.
 6. Run `./lagoon_cli.py ingest toxicity_badwords compute` to compute bad-word-based toxicity on messages and git commits, and put that information in the LAGOON database.
-7. Run `./lagoon_cli.py fusion run` to fuse entities and re-compute caches.
+7. Run `./lagoon_cli.py ingest toxicity_nlp compute` to compute toxicity scores from natural language processing models on messages and git commits, and put that information in the LAGOON database. This step requires the following:
+    1. Run `pip install -r requirements-ml.txt`.
+    2. Download pre-trained NLP models from [Google Drive](https://drive.google.com/drive/folders/1ckZZ8e2YRicZd6wvrLwYyJRdycCgopgi?usp=sharing) and place them inside `ml/nlp_models/`.
+8. Run `./lagoon_cli.py ingest hibp load-breaches` (and, optionally, `./lagoon_cli.py ingest hibp load-pastes`) to extract the number of breaches (and pastes) from [Have I Been Pwned](https://haveibeenpwned.com/) for emails in the LAGOON database.
+9. Run `./lagoon_cli.py fusion run` to fuse entities and re-compute caches.
 
 For development, after any change which affects attributes in the database, `./lagoon_cli.py fusion recache` must be run to re-cache the latest attribute set.
 
 # Documentation
+
+Building the documentation requires a few additional packages, which may be installed as `pip install -r requirements-dev.txt`.
 
 System documentation may be built with the following commands:
 
